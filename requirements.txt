@@ -1,5 +1,6 @@
-streamlit
+Flask
+Werkzeug
 pdf2image
 pytesseract
 Pillow
-streamlit-lottie
+gunicorn

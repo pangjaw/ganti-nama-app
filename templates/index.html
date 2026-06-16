@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sintelis 1.21 BOO Utility</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .drag-over {
+            border-color: #2563eb;
+            background-color: #eff6ff;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen font-sans">
+    <div class="max-w-6xl mx-auto px-4 py-8">
+        <!-- Header -->
+        <div class="flex items-center space-x-4 mb-8">
+            <span class="text-4xl">📑</span>
+            <h1 class="text-3xl font-bold text-gray-800">GANTI NAMA PDFs CEKLIS SINTELIS</h1>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+            <!-- Left Panel: Form Input -->
+            <div class="bg-white p-6 rounded-xl shadow-md border border-gray-100">
+                <h2 class="text-xl font-semibold text-gray-700 mb-6 flex items-center">
+                    <span class="mr-2">📁</span> Input & Setting
+                </h2>
+
+                <form id="upload-form" class="space-y-6">
+                    <!-- Jenis Kegiatan -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-600 mb-2">Pilih Jenis Kegiatan:</label>
+                        <div class="flex space-x-4">
+                            <label class="inline-flex items-center">
+                                <input type="radio" name="jenis_kegiatan" value="Perawatan" checked class="form-radio text-blue-600 focus:ring-blue-500">
+                                <span class="ml-2 text-gray-700">Perawatan</span>
+                            </label>
+                            <label class="inline-flex items-center">
+                                <input type="radio" name="jenis_kegiatan" value="Pemeriksaan" class="form-radio text-blue-600 focus:ring-blue-500">
+                                <span class="ml-2 text-gray-700">Pemeriksaan</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Instansi / Format -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-600 mb-2">Pilih Instansi/Format Nama:</label>
+                        <div class="space-y-2">
+                            <label class="flex items-center">
+                                <input type="radio" name="instansi" value="BTP JAK" checked class="form-radio text-blue-600 focus:ring-blue-500">
+                                <span class="ml-2 text-gray-700">BTP JAK (Format Standar)</span>
+                            </label>
+                            <label class="flex items-center">
+                                <input type="radio" name="instansi" value="BTP BD" class="form-radio text-blue-600 focus:ring-blue-500">
+                                <span class="ml-2 text-gray-700">BTP BD (Format Khusus Sintel Boo)</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Drag & Drop Uploader -->
+                    <div>
+                        <label class="block text-sm font-medium text-gray-600 mb-2">Upload File PDF:</label>
+                        <div id="drop-zone" class="border-2 border-dashed border-gray-300 rounded-xl p-8 text-center cursor-pointer hover:border-blue-500 hover:bg-gray-50 transition duration-150">
+                            <span class="text-4xl block mb-2">📤</span>
+                            <p class="text-gray-600 font-medium">Drag & Drop file PDF di sini atau klik untuk memilih</p>
+                            <p class="text-gray-400 text-xs mt-1">Hanya file berekstensi .pdf</p>
+                            <input type="file" id="file-input" name="files[]" multiple accept=".pdf" class="hidden">
+                        </div>
+                    </div>
+
+                    <!-- Selected Files List -->
+                    <div id="file-list-container" class="hidden">
+                        <h3 class="text-sm font-medium text-gray-600 mb-2">File Terpilih:</h3>
+                        <ul id="file-list" class="bg-gray-50 rounded-lg p-3 max-h-48 overflow-y-auto divide-y divide-gray-200 text-sm text-gray-700"></ul>
+                    </div>
+
+                    <!-- Buttons -->
+                    <div class="flex space-x-3">
+                        <button type="button" id="btn-clear" class="w-1/3 bg-gray-100 hover:bg-gray-200 text-gray-700 py-3 rounded-lg font-medium transition duration-150">
+                            🗑️ Bersihkan
+                        </button>
+                        <button type="submit" id="btn-submit" class="w-2/3 bg-blue-600 hover:bg-blue-700 text-white py-3 rounded-lg font-semibold shadow-md shadow-blue-200 transition duration-150 disabled:opacity-50">
+                            🚀 Proses PDF
+                        </button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Right Panel: Output & Results -->
+            <div class="bg-white p-6 rounded-xl shadow-md border border-gray-100 flex flex-col min-h-[400px]">
+                <h2 class="text-xl font-semibold text-gray-700 mb-6 flex items-center">
+                    <span class="mr-2">📋</span> Hasil Proses
+                </h2>
+
+                <!-- Empty State -->
+                <div id="empty-state" class="flex-1 flex flex-col items-center justify-center text-center text-gray-400 py-12">
+                    <span class="text-5xl mb-4">🚂</span>
+                    <p class="font-medium text-gray-500">Belum ada file yang diproses</p>
+                    <p class="text-sm mt-1 max-w-xs">Upload file PDF di panel sebelah kiri lalu tekan tombol "Proses PDF" untuk memulai.</p>
+                </div>
+
+                <!-- Processing Loader -->
+                <div id="loader-state" class="hidden flex-1 flex flex-col items-center justify-center py-12">
+                    <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+                    <p class="font-semibold text-gray-700">Sedang memproses dokumen...</p>
+                    <p class="text-sm text-gray-400 mt-1">OCR Tesseract sedang mengekstrak tanggal & jenis aset.</p>
+                </div>
+
+                <!-- Results Output -->
+                <div id="results-state" class="hidden flex-1 flex flex-col space-y-4">
+                    <!-- Download Button -->
+                    <a id="download-btn" href="#" class="block w-full bg-green-600 hover:bg-green-700 text-white text-center py-3 rounded-lg font-bold shadow-md shadow-green-200 transition duration-150">
+                        📥 Download Hasil (ZIP)
+                    </a>
+
+                    <!-- Success Logs -->
+                    <div>
+                        <h3 class="font-semibold text-gray-700 mb-2 flex items-center">
+                            <span class="text-green-500 mr-2">✅</span> Daftar File Berhasil:
+                        </h3>
+                        <ul id="success-list" class="bg-green-50 text-green-800 text-sm rounded-lg p-3 max-h-60 overflow-y-auto space-y-1"></ul>
+                    </div>
+
+                    <!-- Error/Warning Logs -->
+                    <div id="error-container" class="hidden">
+                        <h3 class="font-semibold text-gray-700 mb-2 flex items-center">
+                            <span class="text-yellow-500 mr-2">⚠️</span> Warning / Error:
+                        </h3>
+                        <ul id="error-list" class="bg-yellow-50 text-yellow-800 text-sm rounded-lg p-3 max-h-40 overflow-y-auto space-y-1"></ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- JS Logic -->
+    <script>
+        const dropZone = document.getElementById('drop-zone');
+        const fileInput = document.getElementById('file-input');
+        const fileList = document.getElementById('file-list');
+        const fileListContainer = document.getElementById('file-list-container');
+        const uploadForm = document.getElementById('upload-form');
+        const btnClear = document.getElementById('btn-clear');
+        const btnSubmit = document.getElementById('btn-submit');
+
+        const emptyState = document.getElementById('empty-state');
+        const loaderState = document.getElementById('loader-state');
+        const resultsState = document.getElementById('results-state');
+
+        const successList = document.getElementById('success-list');
+        const errorList = document.getElementById('error-list');
+        const errorContainer = document.getElementById('error-container');
+        const downloadBtn = document.getElementById('download-btn');
+
+        let selectedFiles = [];
+
+        // Setup Drag & Drop events
+        dropZone.addEventListener('click', () => fileInput.click());
+        
+        dropZone.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            dropZone.classList.add('drag-over');
+        });
+
+        dropZone.addEventListener('dragleave', () => {
+            dropZone.classList.remove('drag-over');
+        });
+
+        dropZone.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('drag-over');
+            handleFiles(e.dataTransfer.files);
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            handleFiles(e.target.files);
+        });
+
+        function handleFiles(files) {
+            for (let file of files) {
+                if (file.name.endsWith('.pdf')) {
+                    selectedFiles.push(file);
+                }
+            }
+            updateFileList();
+        }
+
+        function updateFileList() {
+            fileList.innerHTML = '';
+            if (selectedFiles.length > 0) {
+                fileListContainer.classList.remove('hidden');
+                selectedFiles.forEach((file, index) => {
+                    const li = document.createElement('li');
+                    li.className = 'py-1 flex justify-between items-center';
+                    li.innerHTML = `
+                        <span class="truncate pr-4">${file.name}</span>
+                        <button type="button" onclick="removeFile(${index})" class="text-red-500 hover:text-red-700 font-bold">✕</button>
+                    `;
+                    fileList.appendChild(li);
+                });
+            } else {
+                fileListContainer.classList.add('hidden');
+            }
+        }
+
+        window.removeFile = function(index) {
+            selectedFiles.splice(index, 1);
+            updateFileList();
+        };
+
+        btnClear.addEventListener('click', () => {
+            selectedFiles = [];
+            updateFileList();
+            fileInput.value = '';
+            showState('empty');
+        });
+
+        function showState(state) {
+            emptyState.classList.add('hidden');
+            loaderState.classList.add('hidden');
+            resultsState.classList.add('hidden');
+
+            if (state === 'empty') emptyState.classList.remove('hidden');
+            else if (state === 'loader') loaderState.classList.remove('hidden');
+            else if (state === 'results') resultsState.classList.remove('hidden');
+        }
+
+        // Form Submit handler
+        uploadForm.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            if (selectedFiles.length === 0) {
+                alert('Pilih minimal 1 file PDF!');
+                return;
+            }
+
+            showState('loader');
+            btnSubmit.disabled = true;
+
+            const formData = new FormData();
+            selectedFiles.forEach(file => {
+                formData.append('files[]', file);
+            });
+            formData.append('jenis_kegiatan', document.querySelector('input[name="jenis_kegiatan"]:checked').value);
+            formData.append('instansi', document.querySelector('input[name="instansi"]:checked').value);
+
+            try {
+                const response = await fetch('/process', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                const data = await response.json();
+                btnSubmit.disabled = false;
+
+                if (!response.ok) {
+                    throw new Error(data.error || 'Terjadi kesalahan sistem');
+                }
+
+                // Render Success Results
+                successList.innerHTML = '';
+                data.files.forEach(file => {
+                    const li = document.createElement('li');
+                    li.textContent = `✅ ${file}`;
+                    successList.appendChild(li);
+                });
+
+                // Render Error Results if any
+                errorList.innerHTML = '';
+                if (data.errors && data.errors.length > 0) {
+                    errorContainer.classList.remove('hidden');
+                    data.errors.forEach(err => {
+                        const li = document.createElement('li');
+                        li.textContent = err;
+                        errorList.appendChild(li);
+                    });
+                } else {
+                    errorContainer.classList.add('hidden');
+                }
+
+                // Set download link
+                downloadBtn.href = data.download_url;
+                showState('results');
+
+            } catch (err) {
+                btnSubmit.disabled = false;
+                showState('empty');
+                alert(err.message);
+            }
+        });
+    </script>
+</body>
+</html>

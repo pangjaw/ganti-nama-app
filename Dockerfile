@@ -14,12 +14,12 @@ RUN apt-get update && apt-get install -y \
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Menyalin seluruh file script dan animasi ke dalam kontainer
+# Menyalin seluruh file script dan template ke dalam kontainer
 COPY . .
 
 # Cloud Run menggunakan port dinamis via environment variable $PORT
 ENV PORT=8501
 EXPOSE 8501
 
-# Jalankan Streamlit dengan parameter untuk Cloud Run
-CMD sh -c "streamlit run app.py --server.port $PORT --server.address 0.0.0.0 --server.enableCORS false --server.enableXsrfProtection false"
+# Jalankan Flask app menggunakan Gunicorn production server
+CMD sh -c "gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 8 --timeout 0 app:app"
