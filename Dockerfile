@@ -4,9 +4,10 @@ FROM python:3.9-slim
 # Mengatur lokasi kerja di dalam kontainer
 WORKDIR /app
 
-# Menginstal Poppler dan Tesseract OCR versi Linux
+# Menginstal Poppler dan Tesseract OCR versi Linux + Pack Bahasa Indonesia (ind)
 RUN apt-get update && apt-get install -y \
     tesseract-ocr \
+    tesseract-ocr-ind \
     poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 

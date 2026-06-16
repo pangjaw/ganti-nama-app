@@ -23,7 +23,7 @@ def process_pdf_ocr(file_bytes):
     img = ImageOps.autocontrast(img)
     width, height = img.size
     img_cropped = img.crop((0.0, 0.0, width * 1.0, height * 0.30)) 
-    text_crop = pytesseract.image_to_string(img_cropped).upper()
+    text_crop = pytesseract.image_to_string(img_cropped, lang='ind+eng').upper()
     del img, images
     gc.collect()
     return text_crop
