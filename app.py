@@ -41,19 +41,42 @@ def detect_doc(text_flat, text_crop, filename_upper):
         kode, kategori = "BPBYE1", "WESEL"
         w_match = re.search(r'(W\d+[A-Z]*)', text_flat)
         aid = w_match.group(1) if w_match else "W_UNKNOWN"
-        loc = "CLT" if "CILEBUT" in text_flat else ("BOO" if "BOGOR" in text_flat else "LOKASI")
+        
+        if "CIOMAS" in text_flat or "COS" in text_flat: loc = "COS"
+        elif "MASENG" in text_flat or "MSG" in text_flat: loc = "MSG"
+        elif "CIGOMBONG" in text_flat or "CGB" in text_flat: loc = "CGB"
+        elif "BOGORPALEDANG" in text_flat or "PALEDANG" in text_flat: loc = "BOP"
+        elif "BATUTULIS" in text_flat or "BTT" in text_flat: loc = "BTT"
+        elif "CILEBUT" in text_flat: loc = "CLT"
+        elif "BOGOR" in text_flat: loc = "BOO"
+        else: loc = "LOKASI"
+        
         assets.append({"id": aid, "loc": loc})
 
     elif "PERAWATAN WESEL" in text_flat or "PENGGERAK WESEL" in text_flat:
         kode, kategori = "BPBYE1", "WESEL"
         w_matches = re.findall(r'PENGGERAK\s+WESEL\s+(W\d+[A-Z]*)', text_flat)
+        
+        if "CIOMAS" in text_flat or "COS" in text_flat: loc = "COS"
+        elif "MASENG" in text_flat or "MSG" in text_flat: loc = "MSG"
+        elif "CIGOMBONG" in text_flat or "CGB" in text_flat: loc = "CGB"
+        elif "BOGORPALEDANG" in text_flat or "PALEDANG" in text_flat: loc = "BOP"
+        elif "BATUTULIS" in text_flat or "BTT" in text_flat: loc = "BTT"
+        elif "CILEBUT" in text_flat: loc = "CLT"
+        elif "BOGOR" in text_flat: loc = "BOO"
+        else: loc = "LOKASI"
+
         if w_matches:
-            aid = w_matches[0]
+            # Mengumpulkan semua wesel unik dan memasukkannya sebagai aset terpisah (Opsi B)
+            unique_w = []
+            for w in w_matches:
+                if w not in unique_w: unique_w.append(w)
+            for w in unique_w:
+                assets.append({"id": w, "loc": loc})
         else:
             w_match = re.search(r'(W\d+[A-Z]*)', text_flat)
             aid = w_match.group(1) if w_match else "W_UNKNOWN"
-        loc = "CLT" if "CILEBUT" in text_flat else ("BOO" if "BOGOR" in text_flat else "LOKASI")
-        assets.append({"id": aid, "loc": loc})
+            assets.append({"id": aid, "loc": loc})
 
     elif "PERALATAN DALAM PERSINYALAN ELEKTRIK" in text_flat:
         kode, kategori = "BPBYE2", "PDSE"
