@@ -1,6 +1,13 @@
 # PANDUAN PENGEMBANGAN SINTELIS WEB APP & OCR RENAMER
 
-Dokumen ini berisi aturan baku, konvensi, dan logika inti (Business Logic) dari aplikasi **Sintelis 1.21 BOO Utility**. Gunakan dokumen ini sebagai panduan utama setiap kali melakukan perbaikan (bugfix) atau penambahan fitur baru pada aplikasi web Flask / backend OCR.
+## 0. Protokol Alur Kerja Developer (Krusial)
+* ❌ **JANGAN UBAH SCRIPT UTAMA** (`app.py` atau script produksi lain) secara langsung tanpa persetujuan eksplisit dari User.
+* ⚠️ **PROSEDUR PERUBAHAN:**
+  1. Analisis masalah/penambahan secara lokal.
+  2. Buat dokumentasi rencana di `IMPROVEMENT_SUMMARY.md`.
+  3. Beritahu/kabari User tentang rencana perubahan dan **tunggu persetujuan**.
+  4. Setelah disetujui, buat cadangan script lama (`app.py.backup.YYYY-MM-DD.vX`).
+  5. Terapkan perubahan, uji, lalu deploy.
 
 ## 1. Arsitektur Infrastruktur Saat Ini
 * **Aplikasi Utama (Web App):** Menggunakan **Flask** murni (Python) + HTML/CSS Tailwind, ditaruh di dalam Docker container. (Peralihan dari Streamlit untuk menghindari pemblokiran WebSocket oleh FortiGuard).
