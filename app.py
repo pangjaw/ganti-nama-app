@@ -1,9 +1,9 @@
 import os
 import re
-import uuid
 import zipfile
 import platform
 import pytesseract
+import gc
 from io import BytesIO
 from flask import Flask, request, jsonify, render_template, send_file
 from pdf2image import convert_from_bytes
@@ -20,17 +20,6 @@ else:
 BTP_JAK_LOCS = ["BOO", "CLT"]  # Bogor, Cilebut
 BTP_BD_LOCS  = ["BOP", "BTT", "COS", "MSG", "CGB"]  # Bogorpaledang, Batutulis, dll
 
-# Pola regex untuk pendeteksian sinyal (digunakan di beberapa tempat)
-SIGNAL_PATTERN = re.compile(r'\b([BJLSXU]+\.?\s?\d{1,3}[A-Z]?)\b')
-
-# Path temp ZIP terakhir yang dihasilkan (diperbarui setiap request /process)
-_last_zip_path = None
-
-def get_temp_zip_path():
-    """Menghasilkan path temp ZIP yang unik per request untuk menghindari konflik."""
-    temp_dir = '/tmp' if platform.system() != 'Windows' else os.environ.get('TEMP', '.')
-    return os.path.join(temp_dir, f'output_{uuid.uuid4().hex}.zip')
-
 def process_pdf_ocr(file_bytes):
     images = convert_from_bytes(file_bytes, dpi=150, first_page=1, last_page=1)
     img = images[0].convert('L')
@@ -39,6 +28,7 @@ def process_pdf_ocr(file_bytes):
     img_cropped = img.crop((0.0, 0.0, width * 1.0, height * 0.30)) 
     text_crop = pytesseract.image_to_string(img_cropped, lang='ind+eng').upper()
     del img, images
+    gc.collect()
     return text_crop
 
 def detect_doc(text_flat, text_crop, filename_upper):
@@ -57,38 +47,13 @@ def detect_doc(text_flat, text_crop, filename_upper):
         if "BOGOR" in text: return "BOO"
         return "LOKASI"
 
-    # Fungsi helper untuk memfilter duplikat array (O(n), urutan terjaga)
+    # Fungsi helper untuk memfilter duplikat array
     def get_unique_list(items):
-        return list(dict.fromkeys(items))
-
-    # Fungsi helper untuk ekstraksi aset JPL (menghilangkan duplikasi kode)
-    def extract_jpl_assets(text_clean, text_flat_ref, multi_word=False):
-        """Ekstrak aset JPL dari text_clean. multi_word=True untuk pola multi-kata."""
-        result = []
-        noise_words = ["DISETUJUL", "DIKETAHUI", "OLEH", "TANGGAL", "ELEKTRIK", "NO"]
-        # Ekstrak JPL Angka
-        for match in re.finditer(r'JPL\s+(?:ELEKTRIK\s+)?(?:NO[.\s]*)?(\d+)', text_clean):
-            aid = f"JPL {match.group(1).strip()}"
-            loc = get_standard_loc(text_clean[match.end():])
-            if loc == "LOKASI":
-                loc = get_standard_loc(text_flat_ref)
-            if not any(a["id"] == aid for a in result):
-                result.append({"id": aid, "loc": loc})
-        # Ekstrak JPL Huruf
-        word_rx = r'JPL\s+([A-Z]+(?:\s+[A-Z\-]+)*)' if multi_word else r'\bJPL\s+([A-Z]+)\b'
-        for match in re.finditer(word_rx, text_clean):
-            aid = f"JPL {match.group(1).strip()}"
-            word_parts = aid.replace("JPL ", "").split()
-            if all(part.strip(".-,;") in noise_words for part in word_parts):
-                continue
-            loc = get_standard_loc(text_clean[match.end():])
-            if loc == "LOKASI":
-                loc = get_standard_loc(text_flat_ref)
-            if not any(a["id"] == aid for a in result):
-                result.append({"id": aid, "loc": loc})
-        if not result:
-            result.append({"id": "JPL", "loc": get_standard_loc(text_flat_ref)})
-        return result
+        unique_items = []
+        for item in items:
+            if item not in unique_items:
+                unique_items.append(item)
+        return unique_items
 
     # GERBANG A: OCR-based detection
     if "PERAWATAN WESEL" in text_flat or "PENGGERAK WESEL" in text_flat:
@@ -149,13 +114,64 @@ def detect_doc(text_flat, text_crop, filename_upper):
 
     elif "TELEKOMUNIKASI DI PINTU PERLINTASAN" in text_flat:
         kode, kategori = "BPBKS17", "PTPP"
-        text_clean = re.sub(r'\bJPL\d+\b', '', text_flat)  # filter system code JPL10506
-        assets = extract_jpl_assets(text_clean, text_flat, multi_word=False)
+        text_clean = re.sub(r'\bJPL\d+\b', '', text_flat) # filter system code JPL10506
+        
+        # Ekstrak JPL Number
+        jpl_matches_num = re.finditer(r'JPL\s+(?:ELEKTRIK\s+)?(?:NO[.\s]*)?(\d+)', text_clean)
+        for match in jpl_matches_num:
+            aid = f"JPL {match.group(1).strip()}"
+            loc = get_standard_loc(text_clean[match.end():])
+            if loc == "LOKASI": loc = get_standard_loc(text_flat)
+            if not any(a["id"] == aid for a in assets):
+                assets.append({"id": aid, "loc": loc})
+                
+        # Ekstrak JPL Huruf jika tidak ada angka yang ketangkap (atau sebagai tambahan)
+        jpl_matches_word = re.finditer(r'\bJPL\s+([A-Z]+)\b', text_clean)
+        for match in jpl_matches_word:
+            aid = f"JPL {match.group(1).strip()}"
+            # Abaikan noise common word yg terdeteksi sebagai JPL text
+            noise_words = ["DISETUJUL", "DIKETAHUI", "OLEH", "TANGGAL", "ELEKTRIK", "NO"]
+            word_parts = aid.replace("JPL ", "").split()
+            if all(part.strip(".-,;") in noise_words for part in word_parts):
+                continue
+            loc = get_standard_loc(text_clean[match.end():])
+            if loc == "LOKASI": loc = get_standard_loc(text_flat)
+            if not any(a["id"] == aid for a in assets):
+                assets.append({"id": aid, "loc": loc})
+                
+        if not assets:
+            assets.append({"id": "JPL", "loc": get_standard_loc(text_flat)})
 
     elif "PINTU PERLINTASAN" in text_flat and "TELEKOMUNIKASI" not in text_flat:
         kode, kategori = "BPBKS17", "PINTU PERLINTASAN"
         text_clean = re.sub(r'\bJPL\d+\b', '', text_flat)
-        assets = extract_jpl_assets(text_clean, text_flat, multi_word=True)
+
+        # Ekstrak JPL Number
+        jpl_matches_num = re.finditer(r'JPL\s+(?:ELEKTRIK\s+)?(?:NO[.\s]*)?(\d+)', text_clean)
+        for match in jpl_matches_num:
+            aid = f"JPL {match.group(1).strip()}"
+            loc = get_standard_loc(text_clean[match.end():])
+            if loc == "LOKASI": loc = get_standard_loc(text_flat)
+            if not any(a["id"] == aid for a in assets):
+                assets.append({"id": aid, "loc": loc})
+                
+        # Ekstrak JPL Huruf
+        jpl_matches_word = re.finditer(r'JPL\s+([A-Z]+(?:\s+[A-Z\-]+)*)', text_clean)
+        for match in jpl_matches_word:
+            aid = f"JPL {match.group(1).strip()}"
+            # Filter noise: kata yang hanya berisi ELEKTRIK, NO, dan sejenisnya tanpa angka
+            noise_words = ["DISETUJUL", "DIKETAHUI", "OLEH", "TANGGAL", "ELEKTRIK", "NO"]
+            word_parts = aid.replace("JPL ", "").split()
+            if all(part.strip(".-,;") in noise_words for part in word_parts):
+                continue
+            loc = get_standard_loc(text_clean[match.end():])
+            if loc == "LOKASI": loc = get_standard_loc(text_flat)
+            if not any(a["id"] == aid for a in assets):
+                assets.append({"id": aid, "loc": loc})
+                
+
+        if not assets:
+            assets.append({"id": "JPL", "loc": get_standard_loc(text_flat)})
 
     elif "TELEKOMUNIKASI DI STASIUN" in text_flat:
         kode, kategori = "BPBKS15", "PTDS"
@@ -180,8 +196,7 @@ def detect_doc(text_flat, text_crop, filename_upper):
         if zp_matches:
             unique_zp = get_unique_list(zp_matches)
             for z in unique_zp:
-                pos = text_flat.find(z)
-                loc = get_standard_loc(text_flat[pos:] if pos != -1 else text_flat)
+                loc = get_standard_loc(text_flat[text_flat.find(z):])
                 if loc == "LOKASI": loc = get_standard_loc(text_flat)
                 z_clean = re.sub(r'ZP\s?(\d)', r'ZP \1', z)
                 assets.append({"id": z_clean, "loc": loc})
@@ -193,7 +208,7 @@ def detect_doc(text_flat, text_crop, filename_upper):
         kode, kategori = "BPBYE3", "PERAGA SINYAL"
         # Cari Sinyal: B.210, UB.210, B210, JL62B, B201, L22, S11A, dll
         # Variasi di KAI: SINYAL BLOK B.210, SINYAL ULANG BLOK UB.210, JL62B, B201
-        signal_matches = SIGNAL_PATTERN.findall(text_flat)
+        signal_matches = re.findall(r'\b([BJLSXU]+\.?\s?\d{1,3}[A-Z]?)\b', text_flat)
         
         valid_signals = []
         for s in signal_matches:
@@ -205,8 +220,7 @@ def detect_doc(text_flat, text_crop, filename_upper):
         if valid_signals:
             unique_sig = get_unique_list(valid_signals)
             for s in unique_sig:
-                pos = text_flat.find(s)
-                loc = get_standard_loc(text_flat[pos:] if pos != -1 else text_flat)
+                loc = get_standard_loc(text_flat[text_flat.find(s):])
                 if loc == "LOKASI": loc = get_standard_loc(text_flat)
                 assets.append({"id": s, "loc": loc})
         else:
@@ -243,7 +257,7 @@ def detect_doc(text_flat, text_crop, filename_upper):
                 assets.append({"id": "ZP", "loc": loc})
         elif "PERAGA SINYAL" in filename_upper:
             kode, kategori = "BPBYE3", "PERAGA SINYAL"
-            signal_matches = SIGNAL_PATTERN.findall(filename_upper)
+            signal_matches = re.findall(r'\b([BJLSXU]+\.?\s?\d{1,3}[A-Z]?)\b', filename_upper)
             if signal_matches:
                 unique_sig = get_unique_list(signal_matches)
                 for s in unique_sig:
@@ -278,15 +292,13 @@ def index():
 
 @app.route('/process', methods=['POST'])
 def process_files():
-    global _last_zip_path
-
     if 'files[]' not in request.files:
         return jsonify({'error': 'No files uploaded'}), 400
         
     uploaded_files = request.files.getlist('files[]')
     jenis_kegiatan = request.form.get('jenis_kegiatan', 'Perawatan')
     instansi = request.form.get('instansi', 'BTP JAK')
-    format_bd = (instansi == 'BTP BD')  # Dihitung sekali, dipakai di semua iterasi
+    user_format_bd = (instansi == 'BTP BD')
 
     zip_buffer = BytesIO()
     processed_files = []
@@ -326,6 +338,9 @@ def process_files():
                     aid = asset["id"]
                     loc = asset["loc"]
                     
+                    # Routing: user pilih manual lewat tombol BTP JAK / BTP BD di web app
+                    format_bd = (instansi == 'BTP BD')
+                    
                     identitas = f"{kategori} {aid} {loc}".strip() if aid else f"{kategori} {loc}".strip()
                     identitas = re.sub(r'\s+', ' ', identitas).strip()
                     
@@ -348,8 +363,8 @@ def process_files():
         return jsonify({'error': 'Tidak ada file yang berhasil diproses', 'details': duplicate_errors}), 400
 
     zip_buffer.seek(0)
-    _last_zip_path = get_temp_zip_path()
-    with open(_last_zip_path, 'wb') as f_out:
+    temp_zip_path = os.path.join('/tmp' if platform.system() != 'Windows' else os.environ.get('TEMP', '.'), 'temp_output.zip')
+    with open(temp_zip_path, 'wb') as f_out:
         f_out.write(zip_buffer.getvalue())
 
     return jsonify({
@@ -362,8 +377,9 @@ def process_files():
 
 @app.route('/download')
 def download():
-    if _last_zip_path and os.path.exists(_last_zip_path):
-        return send_file(_last_zip_path, as_attachment=True, download_name='Ceklis_Hasil_OCR.zip', mimetype='application/zip')
+    temp_zip_path = os.path.join('/tmp' if platform.system() != 'Windows' else os.environ.get('TEMP', '.'), 'temp_output.zip')
+    if os.path.exists(temp_zip_path):
+        return send_file(temp_zip_path, as_attachment=True, download_name='Ceklis_Hasil_OCR.zip', mimetype='application/zip')
     return "File tidak ditemukan", 404
 
 if __name__ == '__main__':
