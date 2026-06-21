@@ -21,7 +21,7 @@ BTP_JAK_LOCS = ["BOO", "CLT"]  # Bogor, Cilebut
 BTP_BD_LOCS  = ["BOP", "BTT", "COS", "MSG", "CGB"]  # Bogorpaledang, Batutulis, dll
 
 # Pola regex untuk pendeteksian sinyal (digunakan di beberapa tempat)
-SIGNAL_PATTERN = re.compile(r'\b([BJLSXU]+\.?\s?\d{1,3}[A-Z]?)\b')
+SIGNAL_PATTERN = re.compile(r'\b([BJLMSXU]+\.?\s?\d{1,3}[A-Z]?)\b')
 
 # Path temp ZIP terakhir yang dihasilkan (diperbarui setiap request /process)
 _last_zip_path = None
@@ -198,8 +198,8 @@ def detect_doc(text_flat, text_crop, filename_upper):
         valid_signals = []
         for s in signal_matches:
             s_clean = s.replace(" ", "").replace(".", "")
-            # Sinyal harus punya huruf awal B/L/J/S/X/U dan setelah itu ada angkanya
-            if re.match(r'^[BJLSXU]+\d+', s_clean):
+            # Sinyal harus punya huruf awal B/L/J/M/S/X/U dan setelah itu ada angkanya (termasuk MJ, MJ20, dll)
+            if re.match(r'^[BJLMSXU]+\d+', s_clean):
                 valid_signals.append(s_clean)
                 
         if valid_signals:
