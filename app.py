@@ -190,6 +190,7 @@ def detect_doc(text_flat, text_crop, filename_upper):
             assets.append({"id": "ZP", "loc": loc})
 
     elif "PERAGA SINYAL" in text_flat:
+        
         kode, kategori = "BPBYE3", "PERAGA SINYAL"
         # Cari Sinyal: B.210, UB.210, B210, JL62B, B201, L22, S11A, dll
         # Variasi di KAI: SINYAL BLOK B.210, SINYAL ULANG BLOK UB.210, JL62B, B201
@@ -206,8 +207,17 @@ def detect_doc(text_flat, text_crop, filename_upper):
             unique_sig = get_unique_list(valid_signals)
             for s in unique_sig:
                 pos = text_flat.find(s)
-                loc = get_standard_loc(text_flat[pos:] if pos != -1 else text_flat)
-                if loc == "LOKASI": loc = get_standard_loc(text_flat)
+                text_after = text_flat[pos:] if pos != -1 else text_flat
+                
+                # [SUNTIKAN BARU] Cari pola lokasi ganda (contoh: MSG-CCR atau CLT - BOO)
+                dual_loc_match = re.search(r'\b([A-Z]{3}\s*-\s*[A-Z]{3})\b', text_after)
+                
+                if dual_loc_match:
+                    loc = dual_loc_match.group(1).replace(" ", "") # Hasilnya bersih: MSG-CCR
+                else:
+                    # Fallback ke cara lama jika bukan lokasi ganda
+                    loc = get_standard_loc(text_after)
+                    if loc == "LOKASI": loc = get_standard_loc(text_flat)
                 assets.append({"id": s, "loc": loc})
         else:
             loc = get_standard_loc(text_flat)
