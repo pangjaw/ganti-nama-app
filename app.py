@@ -5,7 +5,7 @@ import zipfile
 import platform
 import pytesseract
 from io import BytesIO
-from flask import Flask, request, jsonify, render_template, send_file
+from flask import Flask, request, jsonify, render_template, send_file, after_this_request
 from pdf2image import convert_from_bytes
 from PIL import ImageOps
 
@@ -23,8 +23,10 @@ BTP_BD_LOCS  = ["BOP", "BTT", "COS", "MSG", "CGB"]  # Bogorpaledang, Batutulis, 
 # Pola regex untuk pendeteksian sinyal (digunakan di beberapa tempat)
 SIGNAL_PATTERN = re.compile(r'\b([BJLMSXU]+\.?\s?\d{1,3}[A-Z]?)\b')
 
-# Path temp ZIP terakhir yang dihasilkan (diperbarui setiap request /process)
-_last_zip_path = None
+
+
+# Path temp ZIP per request, diambil lewat download_id agar download tidak tertukar antar user
+_downloads = {}
 
 def get_temp_zip_path():
     """Menghasilkan path temp ZIP yang unik per request untuk menghindari konflik."""
@@ -288,7 +290,7 @@ def index():
 
 @app.route('/process', methods=['POST'])
 def process_files():
-    global _last_zip_path
+
 
     if 'files[]' not in request.files:
         return jsonify({'error': 'No files uploaded'}), 400
@@ -358,22 +360,34 @@ def process_files():
         return jsonify({'error': 'Tidak ada file yang berhasil diproses', 'details': duplicate_errors}), 400
 
     zip_buffer.seek(0)
-    _last_zip_path = get_temp_zip_path()
-    with open(_last_zip_path, 'wb') as f_out:
+    download_id = uuid.uuid4().hex
+    zip_path = get_temp_zip_path()
+    with open(zip_path, 'wb') as f_out:
         f_out.write(zip_buffer.getvalue())
+
+    _downloads[download_id] = zip_path
 
     return jsonify({
         'success': True,
         'processed_count': len(processed_files),
         'files': processed_files,
         'errors': duplicate_errors,
-        'download_url': '/download'
+        'download_url': f'/download/{download_id}'
     })
 
-@app.route('/download')
-def download():
-    if _last_zip_path and os.path.exists(_last_zip_path):
-        return send_file(_last_zip_path, as_attachment=True, download_name='Ceklis_Hasil_OCR.zip', mimetype='application/zip')
+@app.route('/download/<download_id>')
+def download(download_id):
+    zip_path = _downloads.pop(download_id, None)
+    if zip_path and os.path.exists(zip_path):
+        @after_this_request
+        def cleanup(response):
+            try:
+                os.remove(zip_path)
+            except OSError:
+                pass
+            return response
+
+        return send_file(zip_path, as_attachment=True, download_name='Ceklis_Hasil_OCR.zip', mimetype='application/zip')
     return "File tidak ditemukan", 404
 
 if __name__ == '__main__':
