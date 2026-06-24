@@ -50,6 +50,7 @@ def detect_doc(text_flat, text_crop, filename_upper):
 
     # Fungsi helper untuk menentukan lokasi standar
     def get_standard_loc(text):
+        text = text.upper()
         if "CIOMAS" in text or "COS" in text: return "COS"
         if "MASENG" in text or "MSG" in text: return "MSG"
         if "CIGOMBONG" in text or "CGB" in text: return "CGB"
@@ -57,11 +58,51 @@ def detect_doc(text_flat, text_crop, filename_upper):
         if "BATUTULIS" in text or "BTT" in text: return "BTT"
         if "CILEBUT" in text: return "CLT"
         if "BOGOR" in text: return "BOO"
+
+        noise_words = {
+            "DISETUJUI", "DISETUJUL", "PISETUJUI", "DIKETAHUI", "DILAKSANAKAN", "OLEH",
+            "TANGGAL", "PERIODE", "PERAWATAN", "NO", "SC", "NOMOR", "ASET",
+            "PENGGERAK", "WESEL", "ELEKTRIK", "MINGGUAN", "BULANAN", "TAHUNAN"
+        }
+        for keyword in ("LOKASI", "STASIUN", "RESOR"):
+            match = re.search(rf'\b{keyword}\b', text)
+            if not match:
+                continue
+            tail = re.sub(r'^[\s:.\-]+', '', text[match.end():])
+            loc_parts = []
+            for part in re.findall(r'[A-Z0-9]+', tail):
+                if part in noise_words or part.isdigit():
+                    break
+                loc_parts.append(part)
+                if len(loc_parts) == 3:
+                    break
+            if loc_parts:
+                return " ".join(loc_parts)
+
+        if ".PDF" in text and "_" in text:
+            tail = text.rsplit("_", 1)[-1]
+            loc_parts = [p for p in re.findall(r'[A-Z0-9]+', tail) if not p.isdigit() and p != "PDF"]
+            if loc_parts:
+                return " ".join(loc_parts[:3])
+
         return "LOKASI"
 
     # Fungsi helper untuk memfilter duplikat array (O(n), urutan terjaga)
     def get_unique_list(items):
         return list(dict.fromkeys(items))
+
+    def extract_wesel_ids(text, allow_generic=False):
+        result = []
+        patterns = [
+            r'PENGGERAK\s+WESEL(?:\s+ELEKTRIK)?\s+(?:W\s*\.?\s*)?(\d{1,3})\s*([A-Z]?)\b',
+            r'\bW(?!SL)\s*\.?\s*(\d{1,3})\s*([A-Z]?)\b'
+        ]
+        if allow_generic:
+            patterns.append(r'\b(?:W\s*\.?\s*)?(\d{1,3})\s*([A-Z])\b')
+        for pattern in patterns:
+            for num, suffix in re.findall(pattern, text):
+                result.append(f"W{num}{suffix}".replace(" ", ""))
+        return get_unique_list(result)
 
     # Fungsi helper untuk ekstraksi aset JPL (menghilangkan duplikasi kode)
     def extract_jpl_assets(text_clean, text_flat_ref, multi_word=False):
@@ -96,30 +137,21 @@ def detect_doc(text_flat, text_crop, filename_upper):
     if "PERAWATAN WESEL" in text_flat or "PENGGERAK WESEL" in text_flat:
         kode, kategori = "BPBYE1", "WESEL"
         loc = get_standard_loc(text_flat)
-        w_matches = re.findall(r'PENGGERAK\s+WESEL\s+(W\d+[A-Z]*)', text_flat)
+        w_matches = extract_wesel_ids(text_flat, allow_generic=True)
         
         if w_matches:
-            unique_w = get_unique_list(w_matches)
-            for w in unique_w:
+            for w in w_matches:
                 assets.append({"id": w, "loc": loc})
         else:
-            # Fallback jika tidak menemukan teks persis 'PENGGERAK WESEL (Wxx)'
-            fallback_matches = re.findall(r'(W\d+[A-Z]*)', text_flat)
-            if fallback_matches:
-                unique_w = get_unique_list(fallback_matches)
-                for w in unique_w:
-                    assets.append({"id": w, "loc": loc})
-            else:
-                assets.append({"id": "W_UNKNOWN", "loc": loc})
+            assets.append({"id": "W_UNKNOWN", "loc": loc})
 
     elif any(x in text_flat for x in ["POINT LOCK", "PENGAMAN WESEL"]):
         kode, kategori = "BPBYE1", "WESEL"  # Biarkan WESEL sesuai aslinya kecuali ada instruksi lain
         loc = get_standard_loc(text_flat)
-        w_matches = re.findall(r'(W\d+[A-Z]*)', text_flat)
+        w_matches = extract_wesel_ids(text_flat, allow_generic=True)
         
         if w_matches:
-            unique_w = get_unique_list(w_matches)
-            for w in unique_w:
+            for w in w_matches:
                 assets.append({"id": w, "loc": loc})
         else:
             assets.append({"id": "W_UNKNOWN", "loc": loc})
@@ -235,10 +267,9 @@ def detect_doc(text_flat, text_crop, filename_upper):
         loc = get_standard_loc(filename_upper)
         if "WESEL ELEKTRIK" in filename_upper:
             kode, kategori = "BPBYE1", "WESEL"
-            w_matches = re.findall(r'(W\d+[A-Z]*)', filename_upper)
+            w_matches = extract_wesel_ids(filename_upper, allow_generic=True)
             if w_matches:
-                unique_w = get_unique_list(w_matches)
-                for w in unique_w: assets.append({"id": w, "loc": loc})
+                for w in w_matches: assets.append({"id": w, "loc": loc})
             else: assets.append({"id": "W_UNKNOWN", "loc": loc})
         elif "POINT LOCK" in filename_upper:
             kode, kategori = "BPBYE7", "WESEL"
