@@ -62,8 +62,10 @@ def detect_doc(text_flat, text_crop, filename_upper):
         noise_words = {
             "DISETUJUI", "DISETUJUL", "PISETUJUI", "DIKETAHUI", "DILAKSANAKAN", "OLEH",
             "TANGGAL", "PERIODE", "PERAWATAN", "NO", "SC", "NOMOR", "ASET",
-            "PENGGERAK", "WESEL", "ELEKTRIK", "MINGGUAN", "BULANAN", "TAHUNAN"
+            "PENGGERAK", "WESEL", "ELEKTRIK", "MINGGUAN", "BULANAN", "TAHUNAN",
+            "HERU"
         }
+        trailing_loc_noise = {"AN", "SIE", "SIEH", "SIH", "SETE"}
         for keyword in ("LOKASI", "STASIUN", "RESOR"):
             match = re.search(rf'\b{keyword}\b', text)
             if not match:
@@ -76,6 +78,8 @@ def detect_doc(text_flat, text_crop, filename_upper):
                 loc_parts.append(part)
                 if len(loc_parts) == 3:
                     break
+            while loc_parts and loc_parts[-1] in trailing_loc_noise:
+                loc_parts.pop()
             if loc_parts:
                 return " ".join(loc_parts)
 
@@ -204,20 +208,24 @@ def detect_doc(text_flat, text_crop, filename_upper):
     elif "PERAWATAN AXLE COUNTER" in text_flat:
         kode, kategori = "BPBYE7", "AXLE COUNTER"
         
-        # Cari format ZP dengan 1-3 angka dan opsional huruf (ZP 10A, ZP10B, ZP 1, ZP 114)
-        # Kami mengizinkan \d{1,3} agar ZP 1 dan ZP 114 terdeteksi.
-        # Hindari tipe perangkat seperti ZP43 dengan memastikan tidak ada teks yang terkait dengannya.
-        zp_matches = re.findall(r'\b(ZP\s?\d{1,3}[A-Z]?)\b', text_flat)
-        # Hapus false positive "ZP 43" (yang biasanya ZP43 atau ZP 43) karena itu tipe alat
-        zp_matches = [z for z in zp_matches if z.replace(" ", "") != "ZP43"]
+        # Cari format ZP dengan 1-3 angka, opsional huruf aset, atau kode lokasi menempel (ZP41SRP).
+        zp_matches = []
+        for match in re.finditer(r'\bZP\s?(\d{1,3})([A-Z]{0,3})\b', text_flat):
+            num, suffix = match.groups()
+            # Hapus false positive "ZP 43" (yang biasanya ZP43 atau ZP 43) karena itu tipe alat.
+            if num == "43" and not suffix:
+                continue
+            asset_suffix = suffix if len(suffix) <= 1 else ""
+            zp_matches.append((f"ZP {num}{asset_suffix}", match.start()))
 
         if zp_matches:
-            unique_zp = get_unique_list(zp_matches)
-            for z in unique_zp:
-                pos = text_flat.find(z)
+            seen_zp = set()
+            for z_clean, pos in zp_matches:
+                if z_clean in seen_zp:
+                    continue
+                seen_zp.add(z_clean)
                 loc = get_standard_loc(text_flat[pos:] if pos != -1 else text_flat)
                 if loc == "LOKASI": loc = get_standard_loc(text_flat)
-                z_clean = re.sub(r'ZP\s?(\d)', r'ZP \1', z)
                 assets.append({"id": z_clean, "loc": loc})
         else:
             loc = get_standard_loc(text_flat)
