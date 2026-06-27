@@ -3,11 +3,14 @@ from __future__ import annotations
 import argparse
 import asyncio
 import getpass
+import json
 import os
 import re
+import sys
+import time
 from datetime import datetime
 from pathlib import Path
-from urllib.parse import urlencode
+from urllib.parse import unquote, urlencode, urljoin, urlparse
 
 from playwright.async_api import TimeoutError as PlaywrightTimeoutError
 from playwright.async_api import async_playwright
@@ -15,8 +18,44 @@ from playwright.async_api import async_playwright
 BASE_URL = "https://p3-ste.kai.id"
 REKAP_PATH = "/rekap_checklist"
 PROFILE_DIR = Path(__file__).with_name(".p3ste-browser")
+LOGIN_FILE = Path(__file__).with_name(".p3ste-logins.json")
 DEFAULT_DOWNLOAD_DIR = Path.home() / "Downloads" / "P3STE"
 TYPE_FALLBACK = {"perawatan": "2", "pemeriksaan": "1"}
+
+
+class Progress:
+    def __init__(self) -> None:
+        self.percent = -1
+
+    def set(self, percent: int, message: str) -> None:
+        percent = max(self.percent, max(0, min(100, percent)))
+        self.percent = percent
+        bar = "#" * (percent // 5) + "." * (20 - percent // 5)
+        sys.stdout.write(f"\r[{bar}] {percent:3d}% {message:<55.55}")
+        sys.stdout.flush()
+
+    def line(self, message: str) -> None:
+        if self.percent >= 0:
+            sys.stdout.write("\n")
+            sys.stdout.flush()
+        print(message)
+
+    def done(self, message: str) -> None:
+        self.set(100, "Selesai")
+        sys.stdout.write("\n")
+        sys.stdout.flush()
+        print(message)
+
+
+class NullProgress:
+    def set(self, percent: int, message: str) -> None:
+        return
+
+    def line(self, message: str) -> None:
+        print(message)
+
+    def done(self, message: str) -> None:
+        print(message)
 
 
 def parse_date(value: str) -> str:
@@ -55,6 +94,28 @@ def unique_path(folder: Path, name: str) -> Path:
     raise RuntimeError(f"Terlalu banyak file bernama mirip: {path.name}")
 
 
+def filename_from_headers(url: str, headers: dict[str, str], fallback: str) -> str:
+    disposition = headers.get("content-disposition", "")
+    match = re.search(r"filename\*=UTF-8''([^;]+)", disposition, re.I)
+    if match:
+        return unquote(match.group(1))
+    match = re.search(r'filename="?([^";]+)"?', disposition, re.I)
+    if match:
+        return match.group(1)
+    name = Path(urlparse(url).path).name
+    return name or fallback
+
+
+def is_print_pdf_target(target: dict[str, str]) -> bool:
+    url = target.get("url", "")
+    path = urlparse(url).path
+    return (
+        target.get("text", "").strip().lower() == "cetak"
+        and "/cetak_checklist/report/" in path
+        and "/exports/pdf/" in path
+    )
+
+
 def build_rekap_url(awal: str, akhir: str, type_value: str) -> str:
     params = {
         "awal": awal,
@@ -72,9 +133,73 @@ def build_rekap_url(awal: str, akhir: str, type_value: str) -> str:
     return f"{BASE_URL}{REKAP_PATH}?{urlencode(params)}"
 
 
-def read_credentials() -> tuple[str, str]:
-    nipp = os.getenv("P3STE_NIPP") or input("NIPP: ").strip()
-    password = os.getenv("P3STE_PASSWORD") or getpass.getpass("Password: ")
+def load_login_store() -> dict:
+    if not LOGIN_FILE.exists():
+        return {"selected": "", "logins": {}}
+    try:
+        data = json.loads(LOGIN_FILE.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        raise SystemExit(f"File login rusak: {LOGIN_FILE}")
+    data.setdefault("selected", "")
+    data.setdefault("logins", {})
+    return data
+
+
+def save_login_store(data: dict) -> None:
+    LOGIN_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+def selected_login(data: dict) -> dict | None:
+    name = data.get("selected", "")
+    return data.get("logins", {}).get(name)
+
+
+def create_login_data() -> None:
+    data = load_login_store()
+    name = input("Nama data login: ").strip()
+    if not name:
+        print("Nama kosong. Batal.")
+        return
+
+    nipp = input("NIPP: ").strip()
+    if not nipp:
+        print("NIPP kosong. Batal.")
+        return
+
+    save_password = input("Simpan password lokal? [y/N]: ").strip().lower() == "y"
+    password = getpass.getpass("Password: ") if save_password else ""
+
+    data["logins"][name] = {"nipp": nipp, "password": password}
+    data["selected"] = name
+    save_login_store(data)
+    print(f"Data login dibuat dan dipilih: {name}")
+
+
+def choose_login_data() -> None:
+    data = load_login_store()
+    names = sorted(data["logins"])
+    if not names:
+        print("Belum ada data login.")
+        return
+
+    for index, name in enumerate(names, start=1):
+        marker = "*" if name == data.get("selected") else " "
+        print(f"{index}. {marker} {name} ({data['logins'][name].get('nipp', '-')})")
+
+    raw = input("Pilih nomor: ").strip()
+    if not raw.isdigit() or not (1 <= int(raw) <= len(names)):
+        print("Pilihan tidak valid.")
+        return
+
+    data["selected"] = names[int(raw) - 1]
+    save_login_store(data)
+    print(f"Data login dipilih: {data['selected']}")
+
+
+def read_credentials(login_data: dict | None = None) -> tuple[str, str]:
+    login_data = login_data or {}
+    nipp = os.getenv("P3STE_NIPP") or login_data.get("nipp") or input("NIPP: ").strip()
+    password = os.getenv("P3STE_PASSWORD") or login_data.get("password") or getpass.getpass("Password: ")
     if not nipp or not password:
         raise SystemExit("NIPP/password kosong.")
     return nipp, password
@@ -97,8 +222,8 @@ async def read_captcha_text(page) -> str:
     return text.strip()
 
 
-async def login(page) -> None:
-    nipp, password = read_credentials()
+async def login(page, login_data: dict | None = None) -> None:
+    nipp, password = read_credentials(login_data)
 
     for attempt in range(1, 4):
         captcha_text = await read_captcha_text(page)
@@ -149,7 +274,87 @@ async def wait_table(page, wait_ms: int) -> None:
     await page.wait_for_timeout(wait_ms)
 
 
-async def set_page_size_100(page, wait_ms: int) -> None:
+async def table_state(page) -> dict[str, object]:
+    return await page.evaluate(
+        """() => {
+            const visible = (el) => {
+                const style = getComputedStyle(el);
+                return style.display !== 'none'
+                    && style.visibility !== 'hidden'
+                    && style.opacity !== '0'
+                    && el.getClientRects().length > 0;
+            };
+            const loadingSelectors = [
+                '.dataTables_processing',
+                '[id$="_processing"]',
+                '.loader-box',
+                '.loader-wrapper',
+                '.loader',
+                '.spinner-border',
+                '.spinner-grow',
+                '[class*="loading"]',
+                '[class*="loader"]',
+                '[class*="spinner"]',
+                '[id*="loading"]',
+                '[id*="loader"]',
+                '[id*="spinner"]'
+            ];
+            const rows = [...document.querySelectorAll('table tbody tr')].filter((row) => {
+                const text = (row.textContent || '').replace(/\\s+/g, ' ').trim();
+                return visible(row) && text && !/no data|tidak ada|kosong|empty|processing|loading/i.test(text);
+            });
+            const processing = [...document.querySelectorAll(loadingSelectors.join(','))]
+                .some((el) => visible(el));
+            const body = document.body?.innerText || '';
+            const empty = /no data available|tidak ada data|data kosong|tidak ditemukan/i.test(body);
+            const printButtons = [...document.querySelectorAll('a, button')]
+                .filter((el) => visible(el) && (el.textContent || '').includes('Cetak')).length;
+            const infoEl = [...document.querySelectorAll('.dataTables_info, [id$="_info"]')].find((el) => visible(el));
+            const infoText = (infoEl?.textContent || '').replace(/\\s+/g, ' ').trim();
+            let totalData = 0;
+            let match = infoText.match(/dari\\s+(\\d+)\\s+data/i) || infoText.match(/of\\s+(\\d+)\\s+(entries|data)/i);
+            if (match) totalData = parseInt(match[1], 10) || 0;
+
+            const pageNumbers = [...document.querySelectorAll('.pagination a, .pagination button, [id$="_paginate"] a, [id$="_paginate"] button, .paginate_button')]
+                .filter((el) => visible(el))
+                .map((el) => (el.textContent || '').trim())
+                .filter((text) => /^\\d+$/.test(text))
+                .map((text) => parseInt(text, 10));
+            const totalPages = pageNumbers.length ? Math.max(...pageNumbers) : 0;
+            return { rows: rows.length, processing, empty, printButtons, totalData, totalPages, infoText };
+        }"""
+    )
+
+
+async def wait_table_data(page, timeout_ms: int, progress: Progress, start: int, end: int, label: str) -> None:
+    started = time.monotonic()
+    ready_since = 0.0
+    while True:
+        state = await table_state(page)
+        if (state["rows"] or state["empty"]) and not state["processing"]:
+            if not ready_since:
+                ready_since = time.monotonic()
+            stable_ms = int((time.monotonic() - ready_since) * 1000)
+            if stable_ms >= 2_500:
+                progress.set(end, f"{label}: siap ({state['rows']} baris)")
+                return
+        else:
+            ready_since = 0.0
+
+        elapsed_ms = int((time.monotonic() - started) * 1000)
+        if elapsed_ms > timeout_ms:
+            progress.line(f"{label}: timeout, lanjut dengan state terakhir: {state}.")
+            return
+
+        span = max(1, end - start)
+        percent = start + min(span - 1, int(span * elapsed_ms / timeout_ms))
+        loading = "loading" if state["processing"] else "tunggu"
+        progress.set(percent, f"{label}: {loading}, rows={state['rows']}, cetak={state['printButtons']}")
+        await page.wait_for_timeout(500)
+
+
+async def set_page_size_100(page, wait_ms: int, progress: Progress, timeout_ms: int) -> None:
+    await wait_table_data(page, timeout_ms, progress, 35, 50, "Data 10")
     changed = await page.evaluate(
         """() => {
             for (const select of document.querySelectorAll('select')) {
@@ -163,18 +368,78 @@ async def set_page_size_100(page, wait_ms: int) -> None:
         }"""
     )
     if changed:
-        print("Set tampilan 100 data. Tunggu loading...")
+        progress.set(55, "Set tampilan 100 data")
         await wait_table(page, wait_ms)
+        await wait_table_data(page, timeout_ms, progress, 55, 70, "Data 100")
     else:
-        print("Pilihan 100 data tidak ditemukan. Lanjut apa adanya.")
+        progress.line("Pilihan 100 data tidak ditemukan. Lanjut apa adanya.")
 
 
-async def download_print_buttons(page, output_dir: Path) -> int:
-    buttons = page.locator("a:has-text('Cetak'), button:has-text('Cetak')")
-    count = await buttons.count()
+async def find_print_targets(page) -> list[dict[str, str]]:
+    return await page.evaluate(
+        """() => [...document.querySelectorAll('a')]
+            .filter((el) => {
+                const text = (el.textContent || '').trim();
+                const style = getComputedStyle(el);
+                const href = el.href || el.getAttribute('href') || '';
+                return text === 'Cetak'
+                    && href.includes('/cetak_checklist/report/')
+                    && href.includes('/exports/pdf/')
+                    && style.display !== 'none'
+                    && style.visibility !== 'hidden';
+            })
+            .map((el) => {
+                return {
+                    tag: el.tagName.toLowerCase(),
+                    text: (el.textContent || '').trim(),
+                    url: el.href || el.getAttribute('href') || '',
+                };
+            })"""
+    )
+
+
+async def download_url(page, output_dir: Path, url: str, index: int, progress: Progress) -> bool:
+    absolute_url = urljoin(page.url, url)
+    response = await page.context.request.get(absolute_url, timeout=30_000)
+    body = await response.body()
+    headers = {key.lower(): value for key, value in response.headers.items()}
+    content_type = headers.get("content-type", "")
+
+    if not response.ok:
+        progress.line(f"Cetak #{index}: HTTP {response.status}.")
+        return False
+    if not body.startswith(b"%PDF") and "pdf" not in content_type.lower():
+        progress.line(f"Cetak #{index}: bukan PDF ({content_type or 'content-type kosong'}).")
+        return False
+
+    filename = filename_from_headers(response.url, headers, f"p3ste-cetak-{index}.pdf")
+    if not filename.lower().endswith(".pdf"):
+        filename += ".pdf"
+    target = unique_path(output_dir, filename)
+    target.write_bytes(body)
+    progress.line(f"Download: {target.name}")
+    return True
+
+
+async def download_print_buttons(page, output_dir: Path, progress: Progress, page_no: int) -> int:
+    targets = [target for target in await find_print_targets(page) if is_print_pdf_target(target)]
+    buttons = page.locator("a.btn.btn-danger:visible[href*='/cetak_checklist/report/'][href*='/exports/pdf/']")
+    count = len(targets)
     saved = 0
 
+    progress.line(f"Tombol Cetak ditemukan: {count}.")
     for index in range(count):
+        percent = 70 + int(25 * (index + 1) / max(1, count))
+        progress.set(percent, f"Halaman {page_no}: download {index + 1}/{count}")
+        target = targets[index]
+        if target["url"]:
+            try:
+                if await download_url(page, output_dir, target["url"], index + 1, progress):
+                    saved += 1
+                    continue
+            except Exception as exc:
+                progress.line(f"Cetak #{index + 1}: download URL gagal ({exc}).")
+
         button = buttons.nth(index)
         try:
             async with page.expect_download(timeout=30_000) as download_info:
@@ -183,14 +448,14 @@ async def download_print_buttons(page, output_dir: Path) -> int:
             target = unique_path(output_dir, download.suggested_filename)
             await download.save_as(target)
             saved += 1
-            print(f"Download: {target.name}")
+            progress.line(f"Download: {target.name}")
         except PlaywrightTimeoutError:
-            print(f"Tombol Cetak #{index + 1}: tidak menghasilkan download.")
+            progress.line(f"Tombol Cetak #{index + 1}: tidak menghasilkan download.")
 
     return saved
 
 
-async def click_next_page(page, wait_ms: int) -> bool:
+async def click_next_page(page, wait_ms: int, progress: Progress, timeout_ms: int) -> bool:
     clicked = await page.evaluate(
         """() => {
             const candidates = [...document.querySelectorAll('a, button')].filter((el) => {
@@ -206,11 +471,31 @@ async def click_next_page(page, wait_ms: int) -> bool:
         }"""
     )
     if clicked:
+        progress.set(96, "Buka halaman berikutnya")
         await wait_table(page, wait_ms)
+        await wait_table_data(page, timeout_ms, progress, 96, 98, "Halaman berikutnya")
     return bool(clicked)
 
 
-async def run(args: argparse.Namespace) -> None:
+async def create_browser_context(pw, output_dir: Path, show: bool):
+    try:
+        return await pw.chromium.launch_persistent_context(
+            str(PROFILE_DIR),
+            channel="msedge",
+            headless=not show,
+            accept_downloads=True,
+            downloads_path=str(output_dir),
+        )
+    except Exception:
+        return await pw.chromium.launch_persistent_context(
+            str(PROFILE_DIR),
+            headless=not show,
+            accept_downloads=True,
+            downloads_path=str(output_dir),
+        )
+
+
+def normalize_args(args: argparse.Namespace) -> tuple[str, str, str, Path]:
     awal = args.awal or ask_date("Tanggal awal")
     akhir = args.akhir or ask_date("Tanggal akhir")
     tipe = args.tipe or ask_type()
@@ -218,60 +503,145 @@ async def run(args: argparse.Namespace) -> None:
     akhir = parse_date(akhir)
     if tipe.lower() not in TYPE_FALLBACK:
         raise SystemExit("Tipe harus Perawatan atau Pemeriksaan.")
-
     output_dir = Path(args.output).expanduser()
     output_dir.mkdir(parents=True, exist_ok=True)
+    return awal, akhir, tipe, output_dir
 
-    async with async_playwright() as pw:
-        try:
-            context = await pw.chromium.launch_persistent_context(
-                str(PROFILE_DIR),
-                channel="msedge",
-                headless=not args.show,
-                accept_downloads=True,
-                downloads_path=str(output_dir),
-            )
-        except Exception:
-            context = await pw.chromium.launch_persistent_context(
-                str(PROFILE_DIR),
-                headless=not args.show,
-                accept_downloads=True,
-                downloads_path=str(output_dir),
-            )
 
-        page = context.pages[0] if context.pages else await context.new_page()
+async def prepare_rekap_page(context, args: argparse.Namespace, login_data: dict | None, progress) -> tuple[object, dict]:
+    awal, akhir, tipe, _output_dir = normalize_args(args)
+    page = context.pages[0] if context.pages else await context.new_page()
 
+    progress.set(15, "Buka P3-STE")
+    await page.goto(f"{BASE_URL}{REKAP_PATH}")
+    await wait_table(page, args.wait_ms)
+    if await is_login_page(page):
+        progress.line("Login dibutuhkan.")
+        await login(page, login_data)
+        progress.set(25, "Login OK")
         await page.goto(f"{BASE_URL}{REKAP_PATH}")
         await wait_table(page, args.wait_ms)
-        if await is_login_page(page):
-            print("Login dibutuhkan.")
-            await login(page)
-            await page.goto(f"{BASE_URL}{REKAP_PATH}")
-            await wait_table(page, args.wait_ms)
 
-        type_value = await detect_type_value(page, tipe)
-        await page.goto(build_rekap_url(awal, akhir, type_value))
-        await wait_table(page, args.wait_ms)
-        await set_page_size_100(page, args.wait_ms)
+    progress.set(30, "Baca tipe checklist")
+    type_value = await detect_type_value(page, tipe)
+    progress.set(35, "Terapkan filter")
+    await page.goto(build_rekap_url(awal, akhir, type_value))
+    await wait_table(page, args.wait_ms)
+    await set_page_size_100(page, args.wait_ms, progress, args.table_timeout_ms)
 
-        total = 0
-        page_no = 1
-        while True:
-            print(f"Halaman {page_no}.")
-            total += await download_print_buttons(page, output_dir)
-            if not await click_next_page(page, args.wait_ms):
-                break
-            page_no += 1
+    state = await table_state(page)
+    total_data = int(state.get("totalData") or state.get("rows") or 0)
+    rows = max(1, int(state.get("rows") or 1))
+    total_pages = int(state.get("totalPages") or (total_data + rows - 1) // rows)
+    summary = {
+        "awal": awal,
+        "akhir": akhir,
+        "tipe": tipe,
+        "rows": int(state.get("rows") or 0),
+        "total_data": total_data,
+        "total_pages": total_pages,
+        "print_buttons": int(state.get("printButtons") or 0),
+        "info_text": str(state.get("infoText") or ""),
+    }
+    return page, summary
 
-        await context.close()
-        print(f"Selesai. Total download: {total}. Folder: {output_dir}")
+
+async def fetch_summary(args: argparse.Namespace, login_data: dict | None = None, progress=None) -> dict:
+    progress = progress or NullProgress()
+    _awal, _akhir, _tipe, output_dir = normalize_args(args)
+
+    async with async_playwright() as pw:
+        progress.set(5, "Buka browser")
+        context = await create_browser_context(pw, output_dir, bool(args.show))
+        try:
+            _page, summary = await prepare_rekap_page(context, args, login_data, progress)
+            progress.done(
+                f"Ringkasan siap. Total data: {summary['total_data']}. Total halaman: {summary['total_pages']}."
+            )
+            return summary
+        finally:
+            await context.close()
+
+
+async def run(args: argparse.Namespace, login_data: dict | None = None) -> None:
+    _awal, _akhir, _tipe, output_dir = normalize_args(args)
+    progress = Progress()
+
+    async with async_playwright() as pw:
+        progress.set(5, "Buka browser")
+        context = await create_browser_context(pw, output_dir, bool(args.show))
+        try:
+            page, _summary = await prepare_rekap_page(context, args, login_data, progress)
+
+            total = 0
+            page_no = 1
+            while True:
+                progress.line(f"Halaman {page_no}.")
+                total += await download_print_buttons(page, output_dir, progress, page_no)
+                if not await click_next_page(page, args.wait_ms, progress, args.table_timeout_ms):
+                    break
+                page_no += 1
+
+            progress.done(f"Selesai. Total download: {total}. Folder: {output_dir}")
+        finally:
+            await context.close()
 
 
 def self_test() -> None:
     assert parse_date("01/06/2026") == "01/06/2026"
     assert safe_name('a:b*c?.pdf') == "a_b_c_.pdf"
     assert "type=2" in build_rekap_url("01/06/2026", "27/06/2026", "2")
+    assert is_print_pdf_target(
+        {
+            "text": "Cetak",
+            "url": "https://p3-ste.kai.id/cetak_checklist/report/perawatan/exports/pdf/706783?false",
+        }
+    )
+    assert not is_print_pdf_target({"text": "Cetak Checklist", "url": "https://p3-ste.kai.id/cetak_checklist"})
     print("Self-test OK")
+
+
+def menu(args: argparse.Namespace) -> None:
+    while True:
+        data = load_login_store()
+        selected = data.get("selected") or "-"
+        print()
+        print("=== P3-STE Downloader ===")
+        print(f"Login dipilih: {selected}")
+        print("1. Buat data login")
+        print("2. Pilih data login")
+        print("3. Tampilkan total halaman dan data")
+        print("4. Proses download")
+        print("0. Keluar")
+        choice = input("Pilih menu: ").strip()
+
+        if choice == "1":
+            create_login_data()
+        elif choice == "2":
+            choose_login_data()
+        elif choice == "3":
+            data = load_login_store()
+            login_data = selected_login(data)
+            if not login_data:
+                print("Belum ada login dipilih. NIPP/password akan ditanya manual jika login dibutuhkan.")
+            summary = asyncio.run(fetch_summary(args, login_data))
+            print(f"Total data: {summary['total_data']}")
+            print(f"Total halaman: {summary['total_pages']}")
+            print(f"Info tabel: {summary['info_text'] or '-'}")
+        elif choice == "4":
+            data = load_login_store()
+            login_data = selected_login(data)
+            if not login_data:
+                print("Belum ada login dipilih. NIPP/password akan ditanya manual jika login dibutuhkan.")
+            asyncio.run(run(args, login_data))
+        elif choice == "0":
+            return
+        else:
+            print("Pilihan tidak valid.")
+
+
+def has_direct_args(args: argparse.Namespace) -> bool:
+    return bool(args.direct or args.awal or args.akhir or args.tipe)
 
 
 def main() -> None:
@@ -281,7 +651,9 @@ def main() -> None:
     parser.add_argument("--tipe", choices=["Perawatan", "Pemeriksaan"], help="Tipe checklist")
     parser.add_argument("--output", default=str(DEFAULT_DOWNLOAD_DIR), help="Folder download")
     parser.add_argument("--show", action="store_true", help="Tampilkan browser")
-    parser.add_argument("--wait-ms", type=int, default=3_000, help="Waktu tunggu setelah loading tabel")
+    parser.add_argument("--wait-ms", type=int, default=5_000, help="Waktu tunggu setelah loading tabel")
+    parser.add_argument("--table-timeout-ms", type=int, default=120_000, help="Batas tunggu data tabel muncul")
+    parser.add_argument("--direct", action="store_true", help="Lewati menu dan langsung proses")
     parser.add_argument("--self-test", action="store_true", help="Cek fungsi dasar tanpa buka browser")
     args = parser.parse_args()
 
@@ -289,7 +661,11 @@ def main() -> None:
         self_test()
         return
 
-    asyncio.run(run(args))
+    if has_direct_args(args):
+        asyncio.run(run(args, selected_login(load_login_store())))
+        return
+
+    menu(args)
 
 
 if __name__ == "__main__":

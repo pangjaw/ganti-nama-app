@@ -98,11 +98,11 @@ def detect_doc(text_flat, text_crop, filename_upper):
     def extract_wesel_ids(text, allow_generic=False):
         result = []
         patterns = [
-            r'PENGGERAK\s+WESEL(?:\s+ELEKTRIK)?\s+(?:W\s*\.?\s*)?(\d{1,3})\s*([A-Z]?)\b',
-            r'\bW(?!SL)\s*\.?\s*(\d{1,3})\s*([A-Z]?)\b'
+            r'PENGGERAK\s+WESEL(?:\s+ELEKTRIK)?\s+(?:W\s*\.?\s*)?(\d{1,3})\s*([A-Z]?\d?)\b',
+            r'\bW(?!SL)\s*\.?\s*(\d{1,3})\s*([A-Z]?\d?)\b'
         ]
         if allow_generic:
-            patterns.append(r'\b(?:W\s*\.?\s*)?(\d{1,3})\s*([A-Z])\b')
+            patterns.append(r'\b(?:W\s*\.?\s*)?(\d{1,3})\s*([A-Z]\d?)\b')
         for pattern in patterns:
             for num, suffix in re.findall(pattern, text):
                 result.append(f"W{num}{suffix}".replace(" ", ""))
@@ -125,16 +125,49 @@ def detect_doc(text_flat, text_crop, filename_upper):
         word_rx = r'JPL\s+([A-Z]+(?:\s+[A-Z\-]+)*)' if multi_word else r'\bJPL\s+([A-Z]+)\b'
         for match in re.finditer(word_rx, text_clean):
             aid = f"JPL {match.group(1).strip()}"
+            aid = re.split(r'\s+\b(?:LOKASI|DISETUJUI|DISETUJUL|PISETUJUI|DIKETAHUI|TANGGAL|OLEH)\b', aid, 1)[0].strip()
             word_parts = aid.replace("JPL ", "").split()
             if all(part.strip(".-,;") in noise_words for part in word_parts):
                 continue
             loc = get_standard_loc(text_clean[match.end():])
             if loc == "LOKASI":
                 loc = get_standard_loc(text_flat_ref)
+            if re.search(r'\b[A-Z]{3}\s*-\s*[A-Z]{3}\b', aid):
+                loc = ""
             if not any(a["id"] == aid for a in result):
                 result.append({"id": aid, "loc": loc})
         if not result:
             result.append({"id": "JPL", "loc": get_standard_loc(text_flat_ref)})
+        return result
+
+    def extract_radio_waystation_assets(text):
+        result = []
+        loc_codes = set(BTP_JAK_LOCS + BTP_BD_LOCS)
+        stop_words = {
+            "LOKASI", "DISETUJUI", "DISETUJUL", "PISETUJUI", "DIKETAHUI", "TANGGAL",
+            "PERIODE", "PERAWATAN", "DILAKSANAKAN", "OLEH", "NO", "SC"
+        }
+        for match in re.finditer(r'\bTLK\d+\s*:\s*(WS\b[^:]+)', text):
+            tokens = re.findall(r'[A-Z0-9]+', match.group(1))
+            aid_parts = []
+            loc = ""
+            for token in tokens:
+                if token in stop_words:
+                    break
+                if token in loc_codes or token in {"BOGOR", "CILEBUT", "BATUTULIS", "BOGORPALEDANG", "PALEDANG", "CIOMAS", "MASENG", "CIGOMBONG"}:
+                    loc = get_standard_loc(token)
+                    break
+                aid_parts.append(token)
+            if aid_parts and aid_parts[0] == "WS":
+                if not loc:
+                    loc = get_standard_loc(text[match.end():])
+                if loc == "LOKASI":
+                    loc = get_standard_loc(text)
+                aid = " ".join(aid_parts)
+                if not any(a["id"] == aid and a["loc"] == loc for a in result):
+                    result.append({"id": aid, "loc": loc})
+        if not result:
+            result.append({"id": "WS", "loc": get_standard_loc(text)})
         return result
 
     # GERBANG A: OCR-based detection
@@ -204,6 +237,10 @@ def detect_doc(text_flat, text_crop, filename_upper):
         kode, kategori = "BPBKS16", "PTLS"
         loc = get_standard_loc(text_flat)
         assets.append({"id": "", "loc": loc})
+
+    elif "RADIO WAYSTATION" in text_flat or "RADIO WAY STATION" in text_flat:
+        kode, kategori = "BPBKS16", "RADIO WAYSTATION"
+        assets = extract_radio_waystation_assets(text_flat)
 
     elif "PERAWATAN AXLE COUNTER" in text_flat:
         kode, kategori = "BPBYE7", "AXLE COUNTER"
@@ -325,6 +362,82 @@ def build_filename(prefix_periode, kode, jenis, identitas, tgl_full, format_bd):
         return f"{prefix_periode}_{resor}_{kode}_{jenis}_{identitas}_{tgl_full}.pdf"
     else:
         return f"{jenis.upper()} {identitas} {tgl_full}.pdf"
+
+
+def read_input_file(entry):
+    if isinstance(entry, tuple):
+        return entry[0], entry[1]
+
+    if hasattr(entry, "filename") and hasattr(entry, "read"):
+        return entry.filename, entry.read()
+
+    path = os.fspath(entry)
+    with open(path, "rb") as f_in:
+        return os.path.basename(path), f_in.read()
+
+
+def process_pdf_entries(entries, jenis_kegiatan="Perawatan", instansi="BTP JAK"):
+    format_bd = (instansi == "BTP BD")
+    zip_buffer = BytesIO()
+    processed_files = []
+    duplicate_errors = []
+    unique_filenames = set()
+
+    with zipfile.ZipFile(zip_buffer, "w", zipfile.ZIP_DEFLATED) as zip_f:
+        for entry in entries:
+            filename, file_bytes = read_input_file(entry)
+            if not filename.lower().endswith(".pdf"):
+                continue
+
+            name_only = filename.upper()
+            tgl_match = re.search(r'(\d{2})-(\d{2})-(\d{4})', name_only)
+            if not tgl_match:
+                duplicate_errors.append(f"❌ {filename}: Format tanggal tidak ditemukan.")
+                continue
+
+            tgl_full = tgl_match.group(0)
+            bln_angka = str(int(tgl_match.group(2)))
+            thn_angka = tgl_match.group(3)
+            prefix_periode = f"{thn_angka}-{bln_angka}"
+
+            try:
+                text_crop = process_pdf_ocr(file_bytes)
+                text_flat = re.sub(r'\s+', ' ', text_crop)
+                kode, kategori, assets = detect_doc(text_flat, text_crop, name_only)
+
+                if not assets:
+                    duplicate_errors.append(f"❌ {filename}: Jenis dokumen tidak terdeteksi.")
+                    continue
+
+                for asset in assets:
+                    aid = asset["id"]
+                    loc = asset["loc"]
+                    identitas = f"{kategori} {aid} {loc}".strip() if aid else f"{kategori} {loc}".strip()
+                    identitas = re.sub(r'\s+', ' ', identitas).strip()
+                    new_name = build_filename(prefix_periode, kode, jenis_kegiatan, identitas, tgl_full, format_bd)
+                    new_name = re.sub(r'[<>:"/\\|?*]', '_', new_name)
+
+                    if new_name not in unique_filenames:
+                        zip_f.writestr(new_name, file_bytes)
+                        processed_files.append(new_name)
+                        unique_filenames.add(new_name)
+                    else:
+                        duplicate_errors.append(f"⚠️ {filename}: Duplikat ({new_name})")
+            except Exception as e:
+                duplicate_errors.append(f"❌ {filename}: Error {e}")
+
+    zip_bytes = b""
+    if processed_files:
+        zip_buffer.seek(0)
+        zip_bytes = zip_buffer.getvalue()
+
+    return {
+        "success": bool(processed_files),
+        "processed_count": len(processed_files),
+        "files": processed_files,
+        "errors": duplicate_errors,
+        "zip_bytes": zip_bytes,
+    }
 
 @app.route('/')
 def index():
