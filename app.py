@@ -65,14 +65,14 @@ def detect_doc(text_flat, text_crop, filename_upper):
             "PENGGERAK", "WESEL", "ELEKTRIK", "MINGGUAN", "BULANAN", "TAHUNAN",
             "HERU"
         }
-        trailing_loc_noise = {"AN", "SIE", "SIEH", "SIH", "SETE"}
+        trailing_loc_noise = {"AN", "EEN", "SIE", "SIEH", "SIH", "SETE"}
         for keyword in ("LOKASI", "STASIUN", "RESOR"):
             match = re.search(rf'\b{keyword}\b', text)
             if not match:
                 continue
             tail = re.sub(r'^[\s:.\-]+', '', text[match.end():])
             loc_parts = []
-            for part in re.findall(r'[A-Z0-9]+', tail):
+            for part in re.findall(r'[A-Z0-9]+(?:-[A-Z0-9]+)*', tail):
                 if part in noise_words or part.isdigit():
                     break
                 loc_parts.append(part)
@@ -208,10 +208,13 @@ def detect_doc(text_flat, text_crop, filename_upper):
     elif "PERAWATAN AXLE COUNTER" in text_flat:
         kode, kategori = "BPBYE7", "AXLE COUNTER"
         
-        # Cari format ZP dengan 1-3 angka, opsional huruf aset, atau kode lokasi menempel (ZP41SRP).
+        # Cari format ZP dengan angka/huruf aset, atau kode lokasi menempel (ZP41SRP, ZPA SDM).
         zp_matches = []
-        for match in re.finditer(r'\bZP\s?(\d{1,3})([A-Z]{0,3})\b', text_flat):
-            num, suffix = match.groups()
+        for match in re.finditer(r'\bZP\s?(?:(\d{1,3})([A-Z]{0,3})|([A-Z]))\b', text_flat):
+            num, suffix, letter = match.groups()
+            if letter:
+                zp_matches.append((f"ZP{letter}", match.start()))
+                continue
             # Hapus false positive "ZP 43" (yang biasanya ZP43 atau ZP 43) karena itu tipe alat.
             if num == "43" and not suffix:
                 continue
