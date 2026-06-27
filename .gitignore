@@ -1,0 +1,6 @@
+.p3ste-browser/
+.p3ste-logins.json
+__pycache__/
+build/
+dist/
+*.spec
