@@ -8,6 +8,7 @@ import os
 import re
 import sys
 import time
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from urllib.parse import unquote, urlencode, urljoin, urlparse
@@ -21,6 +22,18 @@ PROFILE_DIR = Path(__file__).with_name(".p3ste-browser")
 LOGIN_FILE = Path(__file__).with_name(".p3ste-logins.json")
 DEFAULT_DOWNLOAD_DIR = Path.home() / "Downloads" / "P3STE"
 TYPE_FALLBACK = {"perawatan": "2", "pemeriksaan": "1"}
+
+
+@dataclass
+class PreparedSession:
+    pw: object
+    context: object
+    page: object
+    output_dir: Path
+    summary: dict[str, object]
+    awal: str
+    akhir: str
+    tipe: str
 
 
 class Progress:
@@ -222,6 +235,24 @@ async def read_captcha_text(page) -> str:
     return text.strip()
 
 
+async def read_login_feedback(page) -> str:
+    text = await page.evaluate(
+        """() => {
+            const bad = [/^\\d+\\s*[+\\-xX*/]\\s*\\d+$/, /^masuk$/i, /^captcha$/i, /^show$/i];
+            for (const el of document.querySelectorAll(
+                '.alert, .invalid-feedback, .text-danger, .text-warning, .error, [role="alert"], form#form-login p, form#form-login div'
+            )) {
+                const text = (el.textContent || '').replace(/\\s+/g, ' ').trim();
+                if (!text || text.length < 4) continue;
+                if (bad.some((rx) => rx.test(text))) continue;
+                if (/nipp|password|captcha|salah|gagal|invalid|tidak sesuai|login/i.test(text)) return text;
+            }
+            return '';
+        }"""
+    )
+    return text.strip()
+
+
 async def login(page, login_data: dict | None = None) -> None:
     nipp, password = read_credentials(login_data)
 
@@ -246,7 +277,11 @@ async def login(page, login_data: dict | None = None) -> None:
             print("Login OK.")
             return
 
-        print(f"Login belum berhasil. Coba lagi ({attempt}/3).")
+        feedback = await read_login_feedback(page)
+        if feedback:
+            print(f"Login belum berhasil. Coba lagi ({attempt}/3). Pesan web: {feedback}")
+        else:
+            print(f"Login belum berhasil. Coba lagi ({attempt}/3). Cek captcha atau password.")
 
     raise SystemExit("Login gagal 3x.")
 
@@ -508,8 +543,15 @@ def normalize_args(args: argparse.Namespace) -> tuple[str, str, str, Path]:
     return awal, akhir, tipe, output_dir
 
 
-async def prepare_rekap_page(context, args: argparse.Namespace, login_data: dict | None, progress) -> tuple[object, dict]:
-    awal, akhir, tipe, _output_dir = normalize_args(args)
+async def prepare_rekap_page(
+    context,
+    args: argparse.Namespace,
+    login_data: dict | None,
+    progress,
+    awal: str,
+    akhir: str,
+    tipe: str,
+) -> tuple[object, dict]:
     page = context.pages[0] if context.pages else await context.new_page()
 
     progress.set(15, "Buka P3-STE")
@@ -548,13 +590,13 @@ async def prepare_rekap_page(context, args: argparse.Namespace, login_data: dict
 
 async def fetch_summary(args: argparse.Namespace, login_data: dict | None = None, progress=None) -> dict:
     progress = progress or NullProgress()
-    _awal, _akhir, _tipe, output_dir = normalize_args(args)
+    awal, akhir, tipe, output_dir = normalize_args(args)
 
     async with async_playwright() as pw:
         progress.set(5, "Buka browser")
         context = await create_browser_context(pw, output_dir, bool(args.show))
         try:
-            _page, summary = await prepare_rekap_page(context, args, login_data, progress)
+            _page, summary = await prepare_rekap_page(context, args, login_data, progress, awal, akhir, tipe)
             progress.done(
                 f"Ringkasan siap. Total data: {summary['total_data']}. Total halaman: {summary['total_pages']}."
             )
@@ -563,15 +605,68 @@ async def fetch_summary(args: argparse.Namespace, login_data: dict | None = None
             await context.close()
 
 
+async def open_prepared_session(args: argparse.Namespace, login_data: dict | None = None, progress=None) -> PreparedSession:
+    progress = progress or NullProgress()
+    awal, akhir, tipe, output_dir = normalize_args(args)
+    pw = await async_playwright().start()
+    try:
+        progress.set(5, "Buka browser")
+        context = await create_browser_context(pw, output_dir, bool(args.show))
+        try:
+            page, summary = await prepare_rekap_page(context, args, login_data, progress, awal, akhir, tipe)
+            progress.done(
+                f"Ringkasan siap. Total data: {summary['total_data']}. Total halaman: {summary['total_pages']}."
+            )
+            return PreparedSession(
+                pw=pw,
+                context=context,
+                page=page,
+                output_dir=output_dir,
+                summary=summary,
+                awal=awal,
+                akhir=akhir,
+                tipe=tipe,
+            )
+        except Exception:
+            await context.close()
+            raise
+    except Exception:
+        await pw.stop()
+        raise
+
+
+async def download_prepared_session(session: PreparedSession, args: argparse.Namespace, progress=None) -> int:
+    progress = progress or NullProgress()
+    total = 0
+    page_no = 1
+    while True:
+        progress.line(f"Halaman {page_no}.")
+        total += await download_print_buttons(session.page, session.output_dir, progress, page_no)
+        if not await click_next_page(session.page, args.wait_ms, progress, args.table_timeout_ms):
+            break
+        page_no += 1
+    progress.done(f"Selesai. Total download: {total}. Folder: {session.output_dir}")
+    return total
+
+
+async def close_prepared_session(session: PreparedSession | None) -> None:
+    if not session:
+        return
+    try:
+        await session.context.close()
+    finally:
+        await session.pw.stop()
+
+
 async def run(args: argparse.Namespace, login_data: dict | None = None) -> None:
-    _awal, _akhir, _tipe, output_dir = normalize_args(args)
+    awal, akhir, tipe, output_dir = normalize_args(args)
     progress = Progress()
 
     async with async_playwright() as pw:
         progress.set(5, "Buka browser")
         context = await create_browser_context(pw, output_dir, bool(args.show))
         try:
-            page, _summary = await prepare_rekap_page(context, args, login_data, progress)
+            page, _summary = await prepare_rekap_page(context, args, login_data, progress, awal, akhir, tipe)
 
             total = 0
             page_no = 1

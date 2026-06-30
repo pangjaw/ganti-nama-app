@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import asyncio
 import builtins
 import contextlib
 import queue
@@ -161,6 +162,126 @@ class SelectLoginDialog(tk.Toplevel):
         self.destroy()
 
 
+class LoginManagerDialog(tk.Toplevel):
+    def __init__(self, parent: tk.Tk, logins: dict[str, dict], selected: str = ""):
+        super().__init__(parent)
+        self.title("Data Login")
+        self.resizable(False, False)
+        self.result: str | None = None
+        self.logins = {name: dict(value) for name, value in logins.items()}
+        self.selected_name = selected
+
+        body = ttk.Frame(self, padding=12)
+        body.grid(row=0, column=0, sticky="nsew")
+        body.columnconfigure(0, weight=1)
+        body.rowconfigure(1, weight=1)
+
+        ttk.Label(body, text="Daftar login").grid(row=0, column=0, sticky="w")
+        self.listbox = tk.Listbox(body, height=8, width=42)
+        self.listbox.grid(row=1, column=0, sticky="nsew", pady=(6, 8))
+        self.listbox.bind("<<ListboxSelect>>", lambda _event: self._refresh_info())
+
+        self.info_var = tk.StringVar(value="Belum ada data login.")
+        ttk.Label(body, textvariable=self.info_var, wraplength=360).grid(row=2, column=0, sticky="w")
+
+        actions = ttk.Frame(body)
+        actions.grid(row=3, column=0, sticky="ew", pady=(10, 0))
+        ttk.Button(actions, text="Buat", command=self._create).grid(row=0, column=0, padx=2)
+        ttk.Button(actions, text="Edit", command=self._edit).grid(row=0, column=1, padx=2)
+        ttk.Button(actions, text="Hapus", command=self._delete).grid(row=0, column=2, padx=2)
+        ttk.Button(actions, text="Pakai", command=self._choose).grid(row=0, column=3, padx=2)
+        ttk.Button(actions, text="Tutup", command=self._cancel).grid(row=0, column=4, padx=2)
+
+        self._refresh_list()
+        self.bind("<Escape>", lambda _event: self._cancel())
+        self.transient(parent)
+        self.grab_set()
+        self.protocol("WM_DELETE_WINDOW", self._cancel)
+        self.wait_visibility()
+        self.focus_force()
+
+    def _refresh_list(self) -> None:
+        self.listbox.delete(0, "end")
+        names = sorted(self.logins)
+        for name in names:
+            item = f"{name} ({self.logins[name].get('nipp', '-')})"
+            self.listbox.insert("end", item)
+        if names:
+            index = names.index(self.selected_name) if self.selected_name in names else 0
+            self.listbox.selection_set(index)
+            self.selected_name = names[index]
+        else:
+            self.selected_name = ""
+        self._refresh_info()
+
+    def _current_name(self) -> str:
+        names = sorted(self.logins)
+        selection = self.listbox.curselection()
+        if selection and selection[0] < len(names):
+            return names[selection[0]]
+        return self.selected_name
+
+    def _refresh_info(self) -> None:
+        name = self._current_name()
+        self.selected_name = name
+        current = self.logins.get(name)
+        if not current:
+            self.info_var.set("Belum ada data login.")
+            return
+        has_password = "ya" if current.get("password") else "tidak"
+        self.info_var.set(f"Nama: {name} | NIPP: {current.get('nipp', '-')} | password tersimpan: {has_password}")
+
+    def _create(self) -> None:
+        dialog = LoginDialog(self, title="Buat Data Login")
+        self.wait_window(dialog)
+        if not dialog.result:
+            return
+        name = dialog.result["name"]
+        self.logins[name] = {"nipp": dialog.result["nipp"], "password": dialog.result["password"]}
+        self.selected_name = name
+        self._refresh_list()
+
+    def _edit(self) -> None:
+        name = self._current_name()
+        current = self.logins.get(name)
+        if not current:
+            messagebox.showinfo("Data Login", "Pilih data login dulu.", parent=self)
+            return
+        dialog = LoginDialog(
+            self,
+            title="Edit Data Login",
+            initial={"name": name, "nipp": current.get("nipp", ""), "password": current.get("password", "")},
+        )
+        self.wait_window(dialog)
+        if not dialog.result:
+            return
+        new_name = dialog.result["name"]
+        if new_name != name:
+            self.logins.pop(name, None)
+        self.logins[new_name] = {"nipp": dialog.result["nipp"], "password": dialog.result["password"]}
+        self.selected_name = new_name
+        self._refresh_list()
+
+    def _delete(self) -> None:
+        name = self._current_name()
+        if not name:
+            messagebox.showinfo("Data Login", "Pilih data login dulu.", parent=self)
+            return
+        if not messagebox.askyesno("Data Login", f"Hapus data login '{name}'?", parent=self):
+            return
+        self.logins.pop(name, None)
+        self.selected_name = sorted(self.logins)[0] if self.logins else ""
+        self._refresh_list()
+
+    def _choose(self) -> None:
+        self.result = self._current_name()
+        self.destroy()
+
+    def _cancel(self) -> None:
+        self.result = None
+        self.destroy()
+
+
 class DesktopApp(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
@@ -172,11 +293,16 @@ class DesktopApp(tk.Tk):
         self.worker_thread: threading.Thread | None = None
         self.running = False
         self.running_mode = ""
+        self.session_loop: asyncio.AbstractEventLoop | None = None
+        self.session_thread: threading.Thread | None = None
+        self.prepared_session: core.PreparedSession | None = None
+        self.prepared_key: tuple | None = None
         self.login_store = core.load_login_store()
         self.pdf_files: list[str] = []
         self.pdf_zip_bytes = b""
 
         self.login_var = tk.StringVar()
+        self.login_name_var = tk.StringVar(value="-")
         self.start_var = tk.StringVar(value=today_str())
         self.end_var = tk.StringVar(value=today_str())
         self.type_var = tk.StringVar(value="Perawatan")
@@ -241,19 +367,15 @@ class DesktopApp(tk.Tk):
         login_box.grid(row=0, column=0, sticky="ew")
         login_box.columnconfigure(1, weight=1)
 
-        ttk.Label(login_box, text="Login").grid(row=0, column=0, sticky="w", padx=(0, 8))
-        self.login_combo = ttk.Combobox(login_box, textvariable=self.login_var, state="readonly", width=28)
-        self.login_combo.grid(row=0, column=1, sticky="ew")
-        self.login_combo.bind("<<ComboboxSelected>>", lambda _event: self._update_login_info())
+        ttk.Label(login_box, text="Login aktif").grid(row=0, column=0, sticky="w", padx=(0, 8))
+        ttk.Label(login_box, textvariable=self.login_name_var).grid(row=0, column=1, sticky="w")
 
         login_buttons = ttk.Frame(login_box)
         login_buttons.grid(row=0, column=2, padx=(8, 0))
-        self.create_login_button = ttk.Button(login_buttons, text="Buat data login", command=self.create_login)
-        self.create_login_button.grid(row=0, column=0, padx=2)
-        self.choose_login_button = ttk.Button(login_buttons, text="Pilih data login", command=self.choose_login)
-        self.choose_login_button.grid(row=0, column=1, padx=2)
+        self.manage_login_button = ttk.Button(login_buttons, text="Data Login", command=self.manage_logins)
+        self.manage_login_button.grid(row=0, column=0, padx=2)
         self.refresh_login_button = ttk.Button(login_buttons, text="Refresh", command=self.refresh_logins)
-        self.refresh_login_button.grid(row=0, column=2, padx=2)
+        self.refresh_login_button.grid(row=0, column=1, padx=2)
 
         ttk.Label(login_box, textvariable=self.login_info_var).grid(
             row=1, column=0, columnspan=3, sticky="w", pady=(8, 0)
@@ -395,7 +517,6 @@ class DesktopApp(tk.Tk):
     def refresh_logins(self) -> None:
         self.login_store = core.load_login_store()
         names = sorted(self.login_store.get("logins", {}))
-        self.login_combo["values"] = names
         selected = self.login_store.get("selected", "")
         if selected in names:
             self.login_var.set(selected)
@@ -403,6 +524,7 @@ class DesktopApp(tk.Tk):
             self.login_var.set(names[0])
         else:
             self.login_var.set("")
+        self.login_name_var.set(self.login_var.get() or "-")
         self._update_login_info()
         self.append_log("Daftar login dimuat.")
 
@@ -411,38 +533,24 @@ class DesktopApp(tk.Tk):
         selected = self.login_var.get().strip()
         record = data.get(selected)
         if not record:
+            self.login_name_var.set("-")
             self.login_info_var.set("Belum ada login dipilih.")
             return
+        self.login_name_var.set(selected)
         has_password = "ya" if record.get("password") else "tidak"
         self.login_info_var.set(f"NIPP: {record.get('nipp', '-')}, password tersimpan: {has_password}")
 
-    def create_login(self) -> None:
-        dialog = LoginDialog(self)
+    def manage_logins(self) -> None:
+        data = core.load_login_store()
+        dialog = LoginManagerDialog(self, data.get("logins", {}), data.get("selected", ""))
         self.wait_window(dialog)
         if not dialog.result:
             return
 
-        data = core.load_login_store()
-        name = dialog.result["name"]
-        data["logins"][name] = {
-            "nipp": dialog.result["nipp"],
-            "password": dialog.result["password"],
-        }
-        data["selected"] = name
-        core.save_login_store(data)
-        self.append_log(f"Data login dibuat: {name}")
-        self.refresh_logins()
-
-    def choose_login(self) -> None:
-        data = core.load_login_store()
-        dialog = SelectLoginDialog(self, data.get("logins", {}), data.get("selected", ""))
-        self.wait_window(dialog)
-        if not dialog.result:
-            return
-
-        data["selected"] = dialog.result
-        core.save_login_store(data)
-        self.append_log(f"Data login dipilih: {dialog.result}")
+        updated = {"selected": dialog.result, "logins": dialog.logins}
+        core.save_login_store(updated)
+        self._invalidate_prepared_session()
+        self.append_log(f"Data login aktif: {dialog.result}")
         self.refresh_logins()
 
     def choose_output(self) -> None:
@@ -524,6 +632,10 @@ class DesktopApp(tk.Tk):
             core.save_login_store(data)
         return core.selected_login(core.load_login_store())
 
+    def _login_key(self, login_data: dict | None) -> tuple:
+        login_data = login_data or {}
+        return (login_data.get("nipp", ""), login_data.get("password", ""))
+
     def _read_download_args(self) -> argparse.Namespace | None:
         start = self.start_var.get().strip()
         end = self.end_var.get().strip()
@@ -552,13 +664,52 @@ class DesktopApp(tk.Tk):
             direct=True,
         )
 
+    def _download_key(self, args: argparse.Namespace, login_data: dict | None) -> tuple:
+        return (
+            args.awal,
+            args.akhir,
+            args.tipe,
+            args.output,
+            bool(args.show),
+            self._login_key(login_data),
+        )
+
+    def _ensure_session_loop(self) -> asyncio.AbstractEventLoop:
+        if self.session_loop and self.session_thread and self.session_thread.is_alive():
+            return self.session_loop
+
+        loop = asyncio.new_event_loop()
+
+        def runner() -> None:
+            asyncio.set_event_loop(loop)
+            loop.run_forever()
+
+        thread = threading.Thread(target=runner, daemon=True)
+        thread.start()
+        self.session_loop = loop
+        self.session_thread = thread
+        return loop
+
+    def _close_prepared_session_sync(self) -> None:
+        if not self.prepared_session:
+            return
+        loop = self._ensure_session_loop()
+        asyncio.run_coroutine_threadsafe(core.close_prepared_session(self.prepared_session), loop).result()
+        self.prepared_session = None
+        self.prepared_key = None
+
+    def _invalidate_prepared_session(self) -> None:
+        try:
+            self._close_prepared_session_sync()
+        except Exception:
+            self.event_queue.put(("log", "Session ringkasan lama gagal ditutup, tapi proses lanjut."))
+
     def _set_running(self, running: bool, mode: str = "") -> None:
         self.running = running
         self.running_mode = mode if running else ""
         state = "disabled" if running else "normal"
         for widget in (
-            self.create_login_button,
-            self.choose_login_button,
+            self.manage_login_button,
             self.refresh_login_button,
             self.output_button,
             self.summary_button,
@@ -577,12 +728,19 @@ class DesktopApp(tk.Tk):
         if not args:
             return
 
+        login_data = self._selected_login_data()
+        key = self._download_key(args, login_data)
+        if self.prepared_session and self.prepared_key == key:
+            self._show_summary(self.prepared_session.summary)
+            self.append_log("Pakai ringkasan yang sudah disiapkan.")
+            return
+
         self._set_running(True, "summary")
         self.set_status(0, "Mulai ringkasan")
         self.append_log("Mulai baca total halaman dan data.")
         self.worker_thread = threading.Thread(
             target=self._worker_download,
-            args=("summary", args, self._selected_login_data()),
+            args=("summary", args, login_data),
             daemon=True,
         )
         self.worker_thread.start()
@@ -595,12 +753,16 @@ class DesktopApp(tk.Tk):
         if not args:
             return
 
+        login_data = self._selected_login_data()
         self._set_running(True, "download")
         self.set_status(0, "Mulai download")
-        self.append_log("Mulai proses download.")
+        if self.prepared_session and self.prepared_key == self._download_key(args, login_data):
+            self.append_log("Mulai download dari session ringkasan yang sudah siap.")
+        else:
+            self.append_log("Mulai proses download.")
         self.worker_thread = threading.Thread(
             target=self._worker_download,
-            args=("download", args, self._selected_login_data()),
+            args=("download", args, login_data),
             daemon=True,
         )
         self.worker_thread.start()
@@ -644,17 +806,48 @@ class DesktopApp(tk.Tk):
         def patched_getpass(prompt: str = "Password: ", stream=None) -> str:
             return gui_prompt(prompt, password=True)
 
+        class GuiProgress:
+            def set(self, percent: int, message: str) -> None:
+                enqueue_progress(percent, message)
+
+            def line(self, message: str) -> None:
+                enqueue_log(message)
+
+            def done(self, message: str) -> None:
+                enqueue_progress(100, "Selesai")
+                enqueue_log(message)
+
         try:
             builtins.input = patched_input
             core.getpass.getpass = patched_getpass
             with contextlib.redirect_stdout(writer), contextlib.redirect_stderr(writer):
-                import asyncio
+                progress = GuiProgress()
+                loop = self._ensure_session_loop()
+                key = self._download_key(args, login_data)
 
                 if mode == "summary":
-                    summary = asyncio.run(core.fetch_summary(args, login_data, core.Progress()))
+                    if self.prepared_session and self.prepared_key != key:
+                        self._close_prepared_session_sync()
+                    if self.prepared_session and self.prepared_key == key:
+                        summary = self.prepared_session.summary
+                    else:
+                        session = asyncio.run_coroutine_threadsafe(
+                            core.open_prepared_session(args, login_data, progress),
+                            loop,
+                        ).result()
+                        self.prepared_session = session
+                        self.prepared_key = key
+                        summary = session.summary
                     self.event_queue.put(("summary", summary))
                 else:
-                    asyncio.run(core.run(args, login_data))
+                    if self.prepared_session and self.prepared_key == key:
+                        asyncio.run_coroutine_threadsafe(
+                            core.download_prepared_session(self.prepared_session, args, progress),
+                            loop,
+                        ).result()
+                        self._close_prepared_session_sync()
+                    else:
+                        asyncio.run(core.run(args, login_data))
                     self.event_queue.put(("download_done", "Download selesai."))
         except Exception:
             self.event_queue.put(("error", traceback.format_exc()))
@@ -718,6 +911,7 @@ class DesktopApp(tk.Tk):
                     else:
                         messagebox.showwarning("P3-STE", "Tidak ada file berhasil diproses. Lihat hasil.", parent=self)
                 elif kind == "error":
+                    self._invalidate_prepared_session()
                     self._set_running(False)
                     self.append_log(event[1])
                     self.set_status(0, "Proses gagal")
@@ -731,6 +925,9 @@ class DesktopApp(tk.Tk):
         if self.running:
             if not messagebox.askokcancel("P3-STE", "Proses masih jalan. Tutup tetap?", parent=self):
                 return
+        self._invalidate_prepared_session()
+        if self.session_loop and self.session_thread and self.session_thread.is_alive():
+            self.session_loop.call_soon_threadsafe(self.session_loop.stop)
         self.destroy()
 
 
