@@ -4,3 +4,11 @@ __pycache__/
 build/
 dist/
 *.spec
+
+# Obsidian workspace (session-specific, don't track)
+.obsidian/workspace.json
+.obsidian/workspace-mobile.json
+.obsidian/workspace.json
+.obsidian/hotkeys.json
+.obsidian/appearance.json
+.obsidian/core-plugins-migration.json

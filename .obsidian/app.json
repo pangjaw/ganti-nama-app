@@ -1,0 +1,27 @@
+{
+  "userIgnoreFilters": [
+    "**/.git/**",
+    "**/__pycache__/**",
+    "**/.venv/**",
+    "**/venv/**",
+    "**/.p3ste-browser/**",
+    "**/templates/**",
+    "**/.devcontainer/**",
+    "**/compare_pdf_folders.py",
+    "**/create_p3ste_wo.py",
+    "**/desktop_app.py",
+    "**/download_p3ste_rekap.py",
+    "**/app.py",
+    "**/packages.txt",
+    "**/requirements.txt",
+    "**/Dockerfile",
+    "**/*.bat",
+    "**/*.sh",
+    "**/*.json"
+  ],
+  "attachmentFolder": "notes/attachments",
+  "newFileFolderPath": "notes",
+  "newFileLocation": "folder",
+  "useMarkdownLinks": true,
+  "showFrontmatter": true
+}
