@@ -1,5 +1,9 @@
 # 🌐 Otomasi Browser & Login Session
 
+#arsitektur #playwright
+
+> [!tip] Kembali ke [[00_Dashboard|Dashboard Utama]]
+
 Proyek ini menggunakan **Playwright (Python Async API)** untuk mengotomasi interaksi dengan portal P3-STE (`https://p3-ste.kai.id`). Note ini mendokumentasikan bagaimana session browser, bypass login, serta penanganan captcha diimplementasikan.
 
 ---
@@ -62,4 +66,14 @@ Salah satu kendala terbesar otomasi web adalah ketidaksinkronan waktu rendering 
 
 1.  **Mendeteksi Loading Spinner**: Memeriksa keberadaan CSS selector loading umum seperti `.dataTables_processing`, `.loader-box`, `.spinner-border`.
 2.  **Menghitung Baris**: Memastikan jumlah baris (`tr`) di `<tbody>` lebih dari 0 dan bukan bertuliskan "tidak ada data".
-3.  **Kestabilan Data**: Data harus stabil (tidak berubah dan spinner tidak muncul) selama minimal 2.5 detik (`stable_ms >= 2500`) sebelum proses download atau interaksi berikutnya dimulai.
+3. **Kestabilan Data**: Data harus stabil (tidak berubah dan spinner tidak muncul) selama minimal 2.5 detik (`stable_ms >= 2500`) sebelum proses download atau interaksi berikutnya dimulai.
+
+---
+
+## 🔄 Koneksi Antar Note
+
+- [[21_Struktur_Proyek]] — Peran `download_p3ste_rekap.py` & `create_p3ste_wo.py`
+- [[12_Otomasi_Work_Order]] — Otomasi form WO menggunakan mekanisme ini
+- [[51_Alur_Kerja_Agent]] — Scenario 1 & 2: Alur yang menggunakan Playwright
+- [[42_Riwayat_Pembaruan]] — Riwayat peningkatan akurasi matching
+- [[00_Dashboard|Kembali ke Dashboard]]

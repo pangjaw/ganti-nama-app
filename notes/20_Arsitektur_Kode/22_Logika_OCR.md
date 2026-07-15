@@ -1,5 +1,9 @@
 # 🔍 Cara Kerja OCR & Ekstraksi PDF (`app.py`)
 
+#arsitektur #ocr
+
+> [!tip] Kembali ke [[00_Dashboard|Dashboard Utama]]
+
 Aplikasi `app.py` menggunakan teknologi OCR (Optical Character Recognition) untuk mendeteksi data teks di dalam PDF hasil scan, guna mengenali jenis dokumen dan menamainya kembali secara terstruktur.
 
 ---
@@ -60,5 +64,42 @@ Hasil teks dari OCR (`text_crop`) kemudian dicocokkan menggunakan regex dan penc
     *   **BTP Jakarta** (`BTP_JAK_LOCS`): `"BOO"`, `"CLT"` (Bogor, Cilebut).
     *   **BTP Bandung** (`BTP_BD_LOCS`): `"BOP"`, `"BTT"`, `"COS"`, `"MSG"`, `"CGB"`.
 
+*   **Daftar Branch `detect_doc()` (Gerbang A — OCR-based)**:
+    Urutan branch menentukan prioritas deteksi. Branch pertama yang match akan dieksekusi.
+
+    | # | Keyword Match | Kode | Kategori | Ekstraksi Aset |
+    |---|--------------|------|----------|----------------|
+    | 1 | `PERAWATAN WESEL` / `PENGGERAK WESEL` | `BPBYE1` | WESEL | Regex `W{n}{suffix}` per baris |
+    | 2 | `POINT LOCK` / `PENGAMAN WESEL` | `BPBYE1` | WESEL | Sama dengan #1 |
+    | 3 | `PERALATAN DALAM PERSINYALAN ELEKTRIK` | `BPBYE2` | PDSE | Single asset, loc dari OCR |
+    | 4 | `SERAT OPTIK` + `JPL` | `BPBKF4` | SERAT OPTIK | Ekstrak JPL per baris |
+    | 5 | `SERAT OPTIK` + `ER` | `BPBKF4` | SERAT OPTIK | Parse TRA lines → ER/ER TELKOM |
+    | 6 | `TELEKOMUNIKASI DI PINTU PERLINTASAN` | — | PTLP | `extract_jpl_assets()` |
+    | 7 | `PINTU PERLINTASAN` | `BPBKS17` | PINTU PERLINTASAN | `extract_jpl_assets(multi_word=True)` |
+    | 8 | `TELEKOMUNIKASI DI STASIUN` | `BPBKS15` | PTDS | Single asset |
+    | 9 | `TELEKOMUNIKASI DI LUAR STASIUN` | `BPBKS16` | PTLS | Single asset |
+    | 10 | `RADIO BASESTATION` | `BPBKF1/2/3` | RADIO BASESTATION | Sub-tipe: Tait/Digital/standar |
+    | 11 | `SISTEM WAYSTATION` / `RADIO WAYSTATION` | `BPBKS5/BPBKS16` | WAYSTATION | Multi-asset TLK parsing |
+    | 12 | `CTC` + `CTS` | `BPBYE4` | CTC-CTS | Single asset |
+    | 13 | `CATU DAYA` | `BPBYE14` | CATU DAYA | Single asset |
+    | 14 | `PERAWATAN AXLE COUNTER` | `BPBYE7` | AXLE COUNTER | Regex `ZP{n}{suffix}` per baris |
+    | 15 | `PERAGA SINYAL` | `BPBYE3` | PERAGA SINYAL | Regex signal code per baris |
+
+*   **Gerbang B (Fallback Filename-based)**:
+    Jika Gerbang A tidak menghasilkan asset, deteksi fallback dari nama file upload menggunakan keyword yang sama.
+
 *   **Renaming Logic**:
     Setelah kode asset, stasiun, dan kategori teridentifikasi, file PDF akan dinamai ulang dengan format standar yang mudah dibaca oleh sistem rekap dan manusia.
+
+*   **Format BTP JAK**: `{JENIS} {KATEGORI} {ID} {LOKASI} {TANGGAL}.pdf`
+*   **Format BTP BD**: `{PERIODE}_{RESOR}_{KODE}_{JENIS}_{IDENTITAS}_{TANGGAL}.pdf`
+
+---
+
+## 🔄 Koneksi Antar Note
+
+- [[21_Struktur_Proyek]] — Peran `app.py` dalam keseluruhan proyek
+- [[51_Alur_Kerja_Agent]] — Scenario 3: Alur upload PDF via web
+- [[32_Arsitektur_Deploy]] — OCR server di-deploy ke Cloud Run
+- [[11_Menjalankan_Aplikasi]] — Cara menjalankan `app.py` lokal
+- [[00_Dashboard|Kembali ke Dashboard]]

@@ -1,5 +1,9 @@
 # 📜 Riwayat Pembaruan Script WO
 
+#task #playwright #changelog
+
+> [!tip] Kembali ke [[00_Dashboard|Dashboard Utama]]
+
 Berikut adalah riwayat tahapan pembuatan dan penyempurnaan script otomasi pengisian Work Order (`create_p3ste_wo.py`).
 
 ---
@@ -36,3 +40,23 @@ Berikut adalah riwayat tahapan pembuatan dan penyempurnaan script otomasi pengis
 ### 🔍 Tahap 7 — Peningkatan Akurasi Pencocokan Asset (Matching Logic)
 *   **Perubahan**: Menambahkan fungsi pembersih teks, pencarian regex kode asset utama (`ZP60`, `W21A`, `JL92`), serta mekanisme retry menunggu dropdown siap.
 *   **Tujuan**: Menghilangkan error gagal pilih opsi asset AXC/Sinyal yang sering terjadi akibat perbedaan spasi atau penulisan antara data input user dengan opsi dropdown di web. Menghindari kata penghubung seperti `DAN` dianggap sebagai kode stasiun.
+
+### 🔧 Tahap 8 — Ekspansi Deteksi OCR Multi-Tipe (15 Juli 2026)
+*   **Perubahan**: Menambahkan deteksi OCR untuk 5 tipe dokumen baru + perbaikan bug:
+    *   **Serat Optik ER/ER TELKOM** — Deteksi identifier `ER` dan `ER TELKOM` dari TRA lines, dengan dedup suffix `(n)` untuk multi-aset
+    *   **CTC-CTS** — Branch baru dengan kode `BPBYE4`
+    *   **Sistem Waystation** — Branch baru dengan kode `BPBKS5`
+    *   **Radio Basestation** — Branch baru dengan 3 sub-tipe: `BPBKF1` (standar), `BPBKF2` (Digital), `BPBKF3` (Tait)
+    *   **Bug fix**: `get_standard_loc()` sekarang mendeteksi abbreviation `CLT` untuk Cilebut
+*   **Tujuan**: Mencakup semua tipe dokumen P3-STE 2026 yang sebelumnya tidak terdeteksi. Scan 194 file → 193 passed (1 PINTU PERLINTASAN dengan loc kosong — acceptable).
+*   **Backup**: Semua script di-backup ke folder `backup_20260715_123116/`
+
+---
+
+## 🔄 Koneksi Antar Note
+
+- [[41_Rencana_Perbaikan]] — Rencana pengembangan berikutnya
+- [[12_Otomasi_Work_Order]] — Panduan penggunaan script ini
+- [[23_Otomasi_Browser_Playwright]] — Mekanisme browser yang digunakan
+- [[31_Mapping_Checklist]] — Mapping yang diaplikasikan
+- [[00_Dashboard|Kembali ke Dashboard]]

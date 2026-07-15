@@ -56,7 +56,7 @@ def detect_doc(text_flat, text_crop, filename_upper):
         if "CIGOMBONG" in text or "CGB" in text: return "CGB"
         if "BOGORPALEDANG" in text or "PALEDANG" in text: return "BOP"
         if "BATUTULIS" in text or "BTT" in text: return "BTT"
-        if "CILEBUT" in text: return "CLT"
+        if "CILEBUT" in text or "CLT" in text: return "CLT"
         if "BOGOR" in text: return "BOO"
 
         noise_words = {
@@ -238,9 +238,29 @@ def detect_doc(text_flat, text_crop, filename_upper):
         loc = get_standard_loc(text_flat)
         assets.append({"id": "", "loc": loc})
 
-    elif "RADIO WAYSTATION" in text_flat or "RADIO WAY STATION" in text_flat:
-        kode, kategori = "BPBKS16", "RADIO WAYSTATION"
-        assets = extract_radio_waystation_assets(text_flat)
+    elif "RADIO BASESTATION" in text_flat:
+        loc = get_standard_loc(text_flat)
+        if "TAIT" in text_flat:
+            kode, kategori = "BPBKF3", "RADIO BASESTATION TAIT"
+        elif "DIGITAL" in text_flat:
+            kode, kategori = "BPBKF2", "RADIO BASESTATION DIGITAL"
+        else:
+            kode, kategori = "BPBKF1", "RADIO BASESTATION"
+        assets.append({"id": "", "loc": loc})
+
+    elif "SISTEM WAYSTATION" in text_flat or "RADIO WAYSTATION" in text_flat or "RADIO WAY STATION" in text_flat:
+        if "SISTEM WAYSTATION" in text_flat:
+            kode, kategori = "BPBKS5", "SISTEM WAYSTATION"
+            loc = get_standard_loc(text_flat)
+            assets.append({"id": "", "loc": loc})
+        else:
+            kode, kategori = "BPBKS16", "RADIO WAYSTATION"
+            assets = extract_radio_waystation_assets(text_flat)
+
+    elif "CTC" in text_flat and "CTS" in text_flat:
+        kode, kategori = "BPBYE4", "CTC-CTS"
+        loc = get_standard_loc(text_flat)
+        assets.append({"id": "", "loc": loc})
 
     elif "PERAWATAN AXLE COUNTER" in text_flat:
         kode, kategori = "BPBYE7", "AXLE COUNTER"
@@ -310,12 +330,43 @@ def detect_doc(text_flat, text_crop, filename_upper):
         loc = get_standard_loc(text_flat)
         assets.append({"id": "", "loc": loc})
 
+    elif "SERAT OPTIK" in text_flat and "ER" in text_flat:
+        kode, kategori = "BPBKF4", "SERAT OPTIK"
+        lines = [l.strip() for l in text_crop.split('\n') if l.strip()]
+        for line in lines:
+            if "TRA" in line.upper() or "OTB" in line.upper():
+                content = re.sub(r'\b[A-Z]*\d+\b', '', line.split(":")[-1] if ":" in line else line).strip()
+                content = re.sub(r'\s+', ' ', content)
+                tokens = content.split()
+                i = 0
+                # Skip prefix: OTB, FO, dan angka (nomor OTB)
+                while i < len(tokens) and (tokens[i] in {'OTB', 'FO'} or tokens[i].isdigit()):
+                    i += 1
+                remaining = tokens[i:]
+                if remaining:
+                    if remaining[0] == 'ER':
+                        if len(remaining) > 1 and remaining[1] == 'TELKOM':
+                            identifier = 'ER TELKOM'
+                        else:
+                            identifier = 'ER'
+                        loc = get_standard_loc(line)
+                        if loc == 'LOKASI':
+                            loc = get_standard_loc(text_flat)
+                        if not any(a['id'] == identifier and a['loc'] == loc for a in assets):
+                            assets.append({'id': identifier, 'loc': loc})
+
+    elif "SERAT OPTIK" in text_flat:
+        # Fallback: ER/ER TELKOM not found, return generic SO
+        kode, kategori = "BPBKF4", "SERAT OPTIK"
+        loc = get_standard_loc(text_flat)
+        assets.append({"id": "", "loc": loc})
+
     # GERBANG B: filename-based detection
     if not assets:
         loc = get_standard_loc(filename_upper)
         if "WESEL ELEKTRIK" in filename_upper:
             kode, kategori = "BPBYE1", "WESEL"
-            w_matches = extract_wesel_ids(filename_upper, allow_generic=True)
+            w_matches = extract_wesel_ids(filename_upper)
             if w_matches:
                 for w in w_matches: assets.append({"id": w, "loc": loc})
             else: assets.append({"id": "W_UNKNOWN", "loc": loc})
@@ -344,7 +395,29 @@ def detect_doc(text_flat, text_crop, filename_upper):
                 assets.append({"id": "", "loc": loc})
         elif "SERAT OPTIK" in filename_upper:
             kode, kategori = "BPBKF4", "SERAT OPTIK"
+            if "ER TELKOM" in filename_upper:
+                assets.append({"id": "ER TELKOM", "loc": loc})
+            elif " ER " in filename_upper or filename_upper.endswith(" ER"):
+                assets.append({"id": "ER", "loc": loc})
+            else:
+                assets.append({"id": "", "loc": loc})
+        elif "CTC" in filename_upper and "CTS" in filename_upper:
+            kode, kategori = "BPBYE4", "CTC-CTS"
             assets.append({"id": "", "loc": loc})
+        elif "RADIO BASESTATION" in filename_upper:
+            if "TAIT" in filename_upper:
+                kode, kategori = "BPBKF3", "RADIO BASESTATION TAIT"
+            elif "DIGITAL" in filename_upper:
+                kode, kategori = "BPBKF2", "RADIO BASESTATION DIGITAL"
+            else:
+                kode, kategori = "BPBKF1", "RADIO BASESTATION"
+            assets.append({"id": "", "loc": loc})
+        elif "SISTEM WAYSTATION" in filename_upper:
+            kode, kategori = "BPBKS5", "SISTEM WAYSTATION"
+            assets.append({"id": "", "loc": loc})
+        elif "RADIO WAYSTATION" in filename_upper or "RADIO WAY STATION" in filename_upper:
+            kode, kategori = "BPBKS16", "RADIO WAYSTATION"
+            assets.append({"id": "WS", "loc": loc})
 
     return kode, kategori, assets
 
@@ -417,6 +490,16 @@ def process_pdf_entries(entries, jenis_kegiatan="Perawatan", instansi="BTP JAK")
                     new_name = build_filename(prefix_periode, kode, jenis_kegiatan, identitas, tgl_full, format_bd)
                     new_name = re.sub(r'[<>:"/\\|?*]', '_', new_name)
 
+                    # Serat Optik: duplikat dapat suffix (2), (3), dst
+                    if kategori == "SERAT OPTIK" and new_name in unique_filenames:
+                        counter = 2
+                        while True:
+                            name_no_ext, ext = os.path.splitext(new_name)
+                            candidate = f"{name_no_ext} ({counter}){ext}"
+                            if candidate not in unique_filenames:
+                                new_name = candidate
+                                break
+                            counter += 1
                     if new_name not in unique_filenames:
                         zip_f.writestr(new_name, file_bytes)
                         processed_files.append(new_name)
@@ -501,6 +584,16 @@ def process_files():
                     new_name = re.sub(r'[<>:"/\\|?*]', '_', new_name)
                     
                     # Filter output akhir duplikat di level arsip zip
+                    # Serat Optik: duplikat dapat suffix (2), (3), dst
+                    if kategori == "SERAT OPTIK" and new_name in unique_filenames:
+                        counter = 2
+                        while True:
+                            name_no_ext, ext = os.path.splitext(new_name)
+                            candidate = f"{name_no_ext} ({counter}){ext}"
+                            if candidate not in unique_filenames:
+                                new_name = candidate
+                                break
+                            counter += 1
                     if new_name not in unique_filenames:
                         zip_f.writestr(new_name, file_bytes)
                         processed_files.append(new_name)

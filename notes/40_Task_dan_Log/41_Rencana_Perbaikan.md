@@ -1,5 +1,9 @@
 # 🛠️ Daftar Rencana Perbaikan
 
+#task #backlog
+
+> [!tip] Kembali ke [[00_Dashboard|Dashboard Utama]]
+
 Halaman ini digunakan untuk memantau rencana perbaikan, prioritas fitur, dan status implementasi kode pada proyek.
 
 ---
@@ -32,3 +36,12 @@ Berikut adalah daftar peningkatan fitur berikutnya untuk modul Otomasi Work Orde
   - *Target*: Memvalidasi format input user (tanggal, jam, kecocokan keyword asset) sebelum browser Playwright dibuka untuk menghemat waktu dan meminimalisir error di tengah jalan.
 - `[ ]` **Logging Hasil Pengisian Per Batch**
   - *Target*: Menyimpan file log lokal berupa laporan isian yang berhasil dan yang gagal dicocokkan untuk ditinjau ulang oleh user.
+
+---
+
+## 🔄 Koneksi Antar Note
+
+- [[42_Riwayat_Pembaruan]] — Riwayat update yang sudah dilakukan
+- [[12_Otomasi_Work_Order]] — Panduan penggunaan script WO
+- [[51_Alur_Kerja_Agent]] — Alur kerja ekosistem keseluruhan
+- [[00_Dashboard|Kembali ke Dashboard]]

@@ -1,5 +1,9 @@
 # 🏃 Panduan Menjalankan Aplikasi
 
+#panduan #setup
+
+> [!tip] Kembali ke [[00_Dashboard|Dashboard Utama]]
+
 Note ini menjelaskan cara mempersiapkan lingkungan (environment) dan menjalankan berbagai script/aplikasi yang ada di dalam project ini.
 
 ---
@@ -80,6 +84,17 @@ Script bantu untuk membandingkan isi dua folder PDF guna mencari file yang hilan
 
 ## 🗂️ Shortcut Cepat (.bat)
 Di root folder proyek, terdapat file `.bat` untuk mempermudah eksekusi:
-- `1-klik.bat` -> Menjalankan `desktop_app.py`.
-- `download p3ste.bat` -> Menjalankan script download rekap secara langsung via command line.
-- `push_github.bat` -> Membantu melakukan sinkronisasi/push perubahan kode ke repository GitHub.
+- `1-klik.bat` → Menjalankan `desktop_app.py`.
+- `download p3ste.bat` → Menjalankan script download rekap secara langsung via command line.
+- `push_github.bat` → Melakukan sinkronisasi/push perubahan kode ke repository GitHub. Lihat [[32_Arsitektur_Deploy|Pipeline Deployment]].
+
+---
+
+## 🔄 Koneksi Antar Note
+
+- [[21_Struktur_Proyek]] — Detail peran setiap file
+- [[22_Logika_OCR]] — Alur OCR di `app.py`
+- [[23_Otomasi_Browser_Playwright]] — Setup Playwright
+- [[12_Otomasi_Work_Order]] — Panduan WO
+- [[51_Alur_Kerja_Agent]] — Alur kerja ekosistem keseluruhan
+- [[00_Dashboard|Kembali ke Dashboard]]

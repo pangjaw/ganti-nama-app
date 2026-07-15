@@ -1,5 +1,9 @@
 # 📂 Struktur Folder & Komponen Proyek
 
+#arsitektur #struktur
+
+> [!tip] Kembali ke [[00_Dashboard|Dashboard Utama]]
+
 Halaman ini mendokumentasikan organisasi berkas (file structure) serta peran masing-masing modul/script dalam proyek **Ganti Nama App & Otomasi P3-STE**.
 
 ---
@@ -86,4 +90,14 @@ Utility sederhana untuk mencocokkan kelengkapan file hasil download di dua lokas
 
 *   **.p3ste-logins.json**: File ini menyimpan profil NIPP, nama, dan hash password lokal yang di-input lewat GUI. **Penting:** File ini tidak boleh di-commit ke Git karena berisi informasi kredensial sensitif.
 *   **.p3ste-browser/**: Direktori profil user data browser Chromium. Menyimpan cookie dan session login agar pengguna tidak perlu mengisi captcha/login berulang kali setiap kali menjalankan otomasi.
-*   **templates/**: Folder template Flask (misalnya index.html) jika server diakses lewat browser.
+*   **templates/**: Folder template Flask (index.html) jika server diakses lewat browser. Lihat [[11_Menjalankan_Aplikasi|Panduan Menjalankan]].
+
+---
+
+## 🔄 Koneksi Antar Note
+
+- [[22_Logika_OCR]] — Detail alur OCR di `app.py`
+- [[23_Otomasi_Browser_Playwright]] — Detail Playwright di `download_p3ste_rekap.py`
+- [[51_Alur_Kerja_Agent]] — Diagram dependency antar script
+- [[32_Arsitektur_Deploy]] — File Dockerfile & firebase.json
+- [[00_Dashboard|Kembali ke Dashboard]]

@@ -1,5 +1,9 @@
 # 🤖 Alur Otomasi Work Order (`create_p3ste_wo.py`)
 
+#panduan #playwright #agent
+
+> [!tip] Kembali ke [[00_Dashboard|Dashboard Utama]]
+
 `create_p3ste_wo.py` adalah script otomasi berbasis Playwright untuk membantu pengisian form tambah Program Realisasi di website P3-STE KAI (`https://p3-ste.kai.id/masterdataprogramrealisasi/form-add`).
 
 ---
@@ -73,3 +77,13 @@ Perintah ini akan mengetes:
 *   Logika pembagi batch data (maksimal 5 item).
 *   Logika ekstraksi keyword/kode asset untuk Wesel, Sinyal, dan AXC.
 *   Pencegahan kata umum (seperti `DAN`, `LENGKAP`) agar tidak dianggap sebagai kode lokasi.
+
+---
+
+## 🔄 Koneksi Antar Note
+
+- [[31_Mapping_Checklist]] — Detail mapping dropdown per jenis asset
+- [[23_Otomasi_Browser_Playwright]] — Mekanisme login & session Playwright
+- [[51_Alur_Kerja_Agent]] — Scenario 2: Alur kerja WO otomatis
+- [[42_Riwayat_Pembaruan]] — Riwayat tahapan pengembangan script ini
+- [[00_Dashboard|Kembali ke Dashboard]]
