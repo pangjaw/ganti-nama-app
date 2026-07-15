@@ -261,17 +261,35 @@
                     body: formData
                 });
 
-                const data = await response.json();
                 btnSubmit.disabled = false;
 
                 if (!response.ok) {
-                    throw new Error(data.error || 'Terjadi kesalahan sistem');
+                    const errData = await response.json().catch(() => ({}));
+                    throw new Error(errData.error || 'Terjadi kesalahan sistem');
                 }
+
+                // Parse metadata dari headers
+                const processedCount = parseInt(response.headers.get('X-Processed-Count') || '0');
+                const filesRaw = response.headers.get('X-Files') || '';
+                const errorsRaw = response.headers.get('X-Errors') || '';
+                const files = filesRaw ? filesRaw.split('||') : [];
+                const errors = errorsRaw ? errorsRaw.split('||') : [];
+
+                // Trigger download ZIP
+                const blob = await response.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = 'Ceklis_Hasil_OCR.zip';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                setTimeout(() => URL.revokeObjectURL(url), 10000);
 
                 // Render Success Results
                 successList.innerHTML = '';
-                successCount.textContent = `(${data.processed_count || data.files.length})`;
-                data.files.forEach(file => {
+                successCount.textContent = `(${processedCount})`;
+                files.forEach(file => {
                     const li = document.createElement('li');
                     li.textContent = `✅ ${file}`;
                     successList.appendChild(li);
@@ -279,9 +297,9 @@
 
                 // Render Error Results if any
                 errorList.innerHTML = '';
-                if (data.errors && data.errors.length > 0) {
+                if (errors.length > 0 && errors[0] !== '') {
                     errorContainer.classList.remove('hidden');
-                    data.errors.forEach(err => {
+                    errors.forEach(err => {
                         const li = document.createElement('li');
                         li.textContent = err;
                         errorList.appendChild(li);
@@ -290,8 +308,6 @@
                     errorContainer.classList.add('hidden');
                 }
 
-                // Set download link
-                downloadBtn.href = data.download_url;
                 showState('results');
 
             } catch (err) {

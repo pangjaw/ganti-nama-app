@@ -608,20 +608,13 @@ def process_files():
         return jsonify({'error': 'Tidak ada file yang berhasil diproses', 'details': duplicate_errors}), 400
 
     zip_buffer.seek(0)
-    download_id = uuid.uuid4().hex
-    zip_path = get_temp_zip_path()
-    with open(zip_path, 'wb') as f_out:
-        f_out.write(zip_buffer.getvalue())
 
-    _downloads[download_id] = zip_path
-
-    return jsonify({
-        'success': True,
-        'processed_count': len(processed_files),
-        'files': processed_files,
-        'errors': duplicate_errors,
-        'download_url': f'/download/{download_id}'
-    })
+    # Kirim ZIP langsung, embed metadata di response headers
+    resp = send_file(zip_buffer, as_attachment=True, download_name='Ceklis_Hasil_OCR.zip', mimetype='application/zip')
+    resp.headers['X-Processed-Count'] = str(len(processed_files))
+    resp.headers['X-Files'] = '||'.join(processed_files)
+    resp.headers['X-Errors'] = '||'.join(duplicate_errors)
+    return resp
 
 @app.route('/download/<download_id>')
 def download(download_id):
