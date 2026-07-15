@@ -140,6 +140,18 @@ def detect_doc(text_flat, text_crop, filename_upper):
             result.append({"id": "JPL", "loc": get_standard_loc(text_flat_ref)})
         return result
 
+    def get_dual_loc(text):
+        """Scan text utk semua kode lokasi, gabung dg dash jika ≥2 ditemukan."""
+        found_codes = []
+        for code in BTP_JAK_LOCS + BTP_BD_LOCS:
+            if code in text:
+                found_codes.append(code)
+        found_codes = get_unique_list(found_codes)
+        found_codes.sort()
+        if not found_codes:
+            return "LOKASI"
+        return "-".join(found_codes)
+
     def extract_radio_waystation_assets(text):
         result = []
         loc_codes = set(BTP_JAK_LOCS + BTP_BD_LOCS)
@@ -284,11 +296,10 @@ def detect_doc(text_flat, text_crop, filename_upper):
                 if z_clean in seen_zp:
                     continue
                 seen_zp.add(z_clean)
-                loc = get_standard_loc(text_flat[pos:] if pos != -1 else text_flat)
-                if loc == "LOKASI": loc = get_standard_loc(text_flat)
+                loc = get_dual_loc(text_flat)
                 assets.append({"id": z_clean, "loc": loc})
         else:
-            loc = get_standard_loc(text_flat)
+            loc = get_dual_loc(text_flat)
             assets.append({"id": "ZP", "loc": loc})
 
     elif "PERAGA SINYAL" in text_flat:
@@ -308,21 +319,10 @@ def detect_doc(text_flat, text_crop, filename_upper):
         if valid_signals:
             unique_sig = get_unique_list(valid_signals)
             for s in unique_sig:
-                pos = text_flat.find(s)
-                text_after = text_flat[pos:] if pos != -1 else text_flat
-                
-                # [SUNTIKAN BARU] Cari pola lokasi ganda (contoh: MSG-CCR atau CLT - BOO)
-                dual_loc_match = re.search(r'\b([A-Z]{3}\s*-\s*[A-Z]{3})\b', text_after)
-                
-                if dual_loc_match:
-                    loc = dual_loc_match.group(1).replace(" ", "") # Hasilnya bersih: MSG-CCR
-                else:
-                    # Fallback ke cara lama jika bukan lokasi ganda
-                    loc = get_standard_loc(text_after)
-                    if loc == "LOKASI": loc = get_standard_loc(text_flat)
+                loc = get_dual_loc(text_flat)
                 assets.append({"id": s, "loc": loc})
         else:
-            loc = get_standard_loc(text_flat)
+            loc = get_dual_loc(text_flat)
             assets.append({"id": "", "loc": loc})
 
     elif "CATU DAYA" in text_flat:
