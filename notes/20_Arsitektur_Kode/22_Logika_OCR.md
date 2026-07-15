@@ -77,7 +77,7 @@ Hasil teks dari OCR (`text_crop`) kemudian dicocokkan menggunakan regex dan penc
     | 6 | `TELEKOMUNIKASI DI PINTU PERLINTASAN` | — | PTLP | `extract_jpl_assets()` |
     | 7 | `PINTU PERLINTASAN` | `BPBKS17` | PINTU PERLINTASAN | `extract_jpl_assets(multi_word=True)` |
     | 8 | `TELEKOMUNIKASI DI STASIUN` | `BPBKS15` | PTDS | Single asset |
-    | 9 | `TELEKOMUNIKASI DI LUAR STASIUN` | `BPBKS16` | PTLS | Single asset |
+    | 9 | `TELEKOMUNIKASI DI LUAR STASIUN` | `BPBKS16` | PTLS | `get_ptls_loc()` — cari `LUAR` di judul, lalu cari baris `LOKASI` di bawahnya. Parsing nama lokasi dari LOKASI field. Special map: `DEPOK` → `BOO` |
     | 10 | `RADIO BASESTATION` | `BPBKF1/2/3` | RADIO BASESTATION | Sub-tipe: Tait/Digital/standar |
     | 11 | `SISTEM WAYSTATION` / `RADIO WAYSTATION` | `BPBKS5/BPBKS16` | WAYSTATION | Multi-asset TLK parsing |
     | 12 | `CTC` + `CTS` | `BPBYE4` | CTC-CTS | Single asset |

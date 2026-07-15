@@ -18,7 +18,7 @@ else:
     pytesseract.pytesseract.tesseract_cmd = 'tesseract'
 
 BTP_JAK_LOCS = ["BOO", "CLT"]  # Bogor, Cilebut
-BTP_BD_LOCS  = ["BOP", "BTT", "COS", "MSG", "CGB"]  # Bogorpaledang, Batutulis, dll
+BTP_BD_LOCS  = ["BOP", "BTT", "COS", "MSG", "CGB", "CCR"]  # Bogorpaledang, Batutulis, dll
 
 # Pola regex untuk pendeteksian sinyal (digunakan di beberapa tempat)
 SIGNAL_PATTERN = re.compile(r'\b([BJLMSXU]+\.?\s?\d{1,3}[A-Z]?)\b')
@@ -52,8 +52,9 @@ def detect_doc(text_flat, text_crop, filename_upper):
     def get_standard_loc(text):
         text = text.upper()
         if "CIOMAS" in text or "COS" in text: return "COS"
-        if "MASENG" in text or "MSG" in text: return "MSG"
+        if "CICURUG" in text or "CCR" in text: return "CCR"
         if "CIGOMBONG" in text or "CGB" in text: return "CGB"
+        if "MASENG" in text or "MSG" in text: return "MSG"
         if "BOGORPALEDANG" in text or "PALEDANG" in text: return "BOP"
         if "BATUTULIS" in text or "BTT" in text: return "BTT"
         if "CILEBUT" in text or "CLT" in text: return "CLT"
@@ -65,7 +66,7 @@ def detect_doc(text_flat, text_crop, filename_upper):
             "PENGGERAK", "WESEL", "ELEKTRIK", "MINGGUAN", "BULANAN", "TAHUNAN",
             "HERU"
         }
-        trailing_loc_noise = {"AN", "EEN", "SIE", "SIEH", "SIH", "SETE"}
+        trailing_loc_noise = {"AN", "EEN", "SIE", "SIEH", "SIH", "SETE", "S"}
         for keyword in ("LOKASI", "STASIUN", "RESOR"):
             match = re.search(rf'\b{keyword}\b', text)
             if not match:
@@ -89,7 +90,48 @@ def detect_doc(text_flat, text_crop, filename_upper):
             if loc_parts:
                 return " ".join(loc_parts[:3])
 
-        return "LOKASI"
+        return ""
+
+    def get_ptls_loc(text_flat, text_crop):
+        """PTLS: cari "LUAR" di judul, lalu cari "LOKASI" di bawahnya."""
+        loc_map = {
+            "BOGOR": "BOO", "CILEBUT": "CLT",
+            "BATUTULIS": "BTT", "BOGORPALEDANG": "BOP", "PALEDANG": "BOP",
+            "CIOMAS": "COS", "MASENG": "MSG", "CIGOMBONG": "CGB", "CICURUG": "CCR",
+            "DEPOK": "BOO",
+        }
+        lines = text_crop.split('\n')
+        luar_idx = None
+        for i, l in enumerate(lines):
+            if 'LUAR' in l.upper():
+                luar_idx = i
+                break
+        if luar_idx is None:
+            return get_standard_loc(text_flat)
+        for l in lines[luar_idx + 1:]:
+            l_strip = l.strip().upper()
+            if l_strip.startswith('LOKASI'):
+                parts = re.split(r'[:|]+', l_strip, maxsplit=1)
+                if len(parts) > 1:
+                    val = parts[-1].strip()
+                else:
+                    val = parts[0][6:].strip()
+                words = re.findall(r'[A-Z0-9]+(?:-[A-Z0-9]+)*', val)
+                if not words:
+                    continue
+                first = words[0]
+                if '-' in first:
+                    subs = first.split('-')
+                    for s in subs:
+                        if s == 'CIGOMBONG':
+                            return 'CGB'
+                    for s in subs:
+                        m = loc_map.get(s)
+                        if m:
+                            return m
+                    return first
+                return loc_map.get(first, first)
+        return get_standard_loc(text_flat)
 
     # Fungsi helper untuk memfilter duplikat array (O(n), urutan terjaga)
     def get_unique_list(items):
@@ -113,10 +155,29 @@ def detect_doc(text_flat, text_crop, filename_upper):
         """Ekstrak aset JPL dari text_clean. multi_word=True untuk pola multi-kata."""
         result = []
         noise_words = ["DISETUJUL", "DIKETAHUI", "OLEH", "TANGGAL", "ELEKTRIK", "NO"]
+        loc_codes = {"BOP", "BTT", "CLT", "CGB", "MSG", "COS", "BOO", "CCR"}
+        
+        def get_jpl_inline_loc(text_snippet):
+            """Cari 3-letter location codes di sekitar text JPL, gabung dash jika dual."""
+            found = []
+            for code in loc_codes:
+                if code in text_snippet:
+                    found.append(code)
+            if not found:
+                return ""
+            # dedup dan urutkan
+            found = list(dict.fromkeys(found))
+            found.sort()
+            return "-".join(found)
+        
         # Ekstrak JPL Angka
         for match in re.finditer(r'JPL\s+(?:ELEKTRIK\s+)?(?:NO[.\s]*)?(\d+)', text_clean):
             aid = f"JPL {match.group(1).strip()}"
-            loc = get_standard_loc(text_clean[match.end():])
+            # Coba inline location dulu (max 80 karakter setelah match)
+            snippet = text_clean[match.end():match.end()+25]
+            loc = get_jpl_inline_loc(snippet)
+            if not loc:
+                loc = get_standard_loc(text_clean[match.end():])
             if loc == "LOKASI":
                 loc = get_standard_loc(text_flat_ref)
             if not any(a["id"] == aid for a in result):
@@ -129,7 +190,11 @@ def detect_doc(text_flat, text_crop, filename_upper):
             word_parts = aid.replace("JPL ", "").split()
             if all(part.strip(".-,;") in noise_words for part in word_parts):
                 continue
-            loc = get_standard_loc(text_clean[match.end():])
+            # Coba inline location dulu (max 80 karakter setelah match)
+            snippet = text_clean[match.end():match.end()+25]
+            loc = get_jpl_inline_loc(snippet)
+            if not loc:
+                loc = get_standard_loc(text_clean[match.end():])
             if loc == "LOKASI":
                 loc = get_standard_loc(text_flat_ref)
             if re.search(r'\b[A-Z]{3}\s*-\s*[A-Z]{3}\b', aid):
@@ -142,14 +207,23 @@ def detect_doc(text_flat, text_crop, filename_upper):
 
     def get_dual_loc(text):
         """Scan text utk semua kode lokasi, gabung dg dash jika ≥2 ditemukan."""
+        # Mapping nama panjang -> kode lokasi 3 huruf
+        loc_map = {
+            "BOGOR": "BOO", "CILEBUT": "CLT",
+            "BATUTULIS": "BTT", "BOGORPALEDANG": "BOP", "PALEDANG": "BOP",
+            "CIOMAS": "COS", "MASENG": "MSG", "CIGOMBONG": "CGB",
+        }
         found_codes = []
         for code in BTP_JAK_LOCS + BTP_BD_LOCS:
             if code in text:
                 found_codes.append(code)
+        for full, code in loc_map.items():
+            if full in text and code not in found_codes:
+                found_codes.append(code)
         found_codes = get_unique_list(found_codes)
         found_codes.sort()
         if not found_codes:
-            return "LOKASI"
+            return get_standard_loc(text)
         return "-".join(found_codes)
 
     def extract_radio_waystation_assets(text):
@@ -234,6 +308,20 @@ def detect_doc(text_flat, text_crop, filename_upper):
         kode, kategori = "BPBKS17", "PTPP"
         text_clean = re.sub(r'\bJPL\d+\b', '', text_flat)  # filter system code JPL10506
         assets = extract_jpl_assets(text_clean, text_flat, multi_word=False)
+        # Dedup JPL dengan ID sama — gabungkan lokasi berbeda jadi satu
+        dedup = {}
+        for a in assets:
+            aid = a["id"]
+            loc = a["loc"]
+            if aid not in dedup:
+                dedup[aid] = {"id": aid, "loc": loc}
+            else:
+                existing = dedup[aid]["loc"]
+                if existing != loc:
+                    # merge lokasi
+                    all_locs = list(dict.fromkeys(existing.split("-") + loc.split("-")))
+                    dedup[aid]["loc"] = "-".join(all_locs)
+        assets = list(dedup.values())
 
     elif "PINTU PERLINTASAN" in text_flat and "TELEKOMUNIKASI" not in text_flat:
         kode, kategori = "BPBKS17", "PINTU PERLINTASAN"
@@ -247,7 +335,7 @@ def detect_doc(text_flat, text_crop, filename_upper):
 
     elif "TELEKOMUNIKASI DI LUAR STASIUN" in text_flat:
         kode, kategori = "BPBKS16", "PTLS"
-        loc = get_standard_loc(text_flat)
+        loc = get_ptls_loc(text_flat, text_crop)
         assets.append({"id": "", "loc": loc})
 
     elif "RADIO BASESTATION" in text_flat:
@@ -326,8 +414,16 @@ def detect_doc(text_flat, text_crop, filename_upper):
             assets.append({"id": "", "loc": loc})
 
     elif "CATU DAYA" in text_flat:
-        kode, kategori = "BPBYE14", "CATU DAYA"
-        loc = get_standard_loc(text_flat)
+        # Deteksi subtype dari baris CDA: GENSET/UPS/BATTERE ER SINYAL atau ER RADIO
+        cda_lines = [l for l in text_crop.split('\n') if 'CDA' in l.upper()]
+        combined_cda = ' '.join(cda_lines).upper()
+        if 'ER RADIO' in combined_cda:
+            kode, kategori = "BPBYE14", "CATU DAYA ER RADIO"
+        elif 'ER SINYAL' in combined_cda:
+            kode, kategori = "BPBYE14", "CATU DAYA ER SINYAL"
+        else:
+            kode, kategori = "BPBYE14", "CATU DAYA"
+        loc = get_dual_loc(text_flat)
         assets.append({"id": "", "loc": loc})
 
     elif "SERAT OPTIK" in text_flat and "ER" in text_flat:
@@ -612,8 +708,11 @@ def process_files():
     # Kirim ZIP langsung, embed metadata di response headers
     resp = send_file(zip_buffer, as_attachment=True, download_name='Ceklis_Hasil_OCR.zip', mimetype='application/zip')
     resp.headers['X-Processed-Count'] = str(len(processed_files))
-    resp.headers['X-Files'] = '||'.join(processed_files)
-    resp.headers['X-Errors'] = '||'.join(duplicate_errors)
+    # Encode custom headers to ASCII-safe to prevent latin-1 errors
+    x_files = '||'.join(processed_files)
+    x_errors = '||'.join(duplicate_errors)
+    resp.headers['X-Files'] = x_files.encode('ascii', 'replace').decode('ascii')
+    resp.headers['X-Errors'] = x_errors.encode('ascii', 'replace').decode('ascii')
     return resp
 
 @app.route('/download/<download_id>')

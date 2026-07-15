@@ -51,6 +51,12 @@ Berikut adalah riwayat tahapan pembuatan dan penyempurnaan script otomasi pengis
 *   **Tujuan**: Mencakup semua tipe dokumen P3-STE 2026 yang sebelumnya tidak terdeteksi. Scan 194 file → 193 passed (1 PINTU PERLINTASAN dengan loc kosong — acceptable).
 *   **Backup**: Semua script di-backup ke folder `backup_20260715_123116/`
 
+### 🐛 Tahap 9 — Perbaikan Logika PTLS & Encoding Response (15 Juli 2026)
+*   **Perubahan**:
+    *   `get_ptls_loc()` — logika PTLS diubah: cari `LUAR` di judul, lalu cari `LOKASI` di bawahnya (bukan dari aset TWR/TRA). Special map `DEPOK` → `BOO`.
+    *   `X-Files`/`X-Errors` header di-encode ASCII-safe — fix `UnicodeEncodeError: latin-1` saat download multi-file.
+*   **Tujuan**: PTLS Depok sebelumnya salah jadi `DPOK` (karena LOKASI field menulis DEPOK, tapi aset BOO). Sekarang ambil dari LOKASI field. Fix encoding agar emoji ⚠️❌ di error message tidak crash Flask.
+
 ---
 
 ## 🔄 Koneksi Antar Note
