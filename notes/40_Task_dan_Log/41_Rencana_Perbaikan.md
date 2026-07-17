@@ -41,7 +41,5 @@ Berikut adalah daftar peningkatan fitur berikutnya untuk modul Otomasi Work Orde
 
 ## 🔄 Koneksi Antar Note
 
+- [[44_Temuan_dan_Rencana_Perbaikan_v3]] — Temuan & rencana perbaikan terkini (Batch 3)
 - [[42_Riwayat_Pembaruan]] — Riwayat update yang sudah dilakukan
-- [[12_Otomasi_Work_Order]] — Panduan penggunaan script WO
-- [[51_Alur_Kerja_Agent]] — Alur kerja ekosistem keseluruhan
-- [[00_Dashboard|Kembali ke Dashboard]]

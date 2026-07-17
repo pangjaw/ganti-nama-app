@@ -1,14 +1,47 @@
-.p3ste-browser/
-.p3ste-logins.json
+# === CORE IGNORE FILE BUG - JANGAN PUSH PDF RATUSAN MB ===
+FILE BUG/
+backup_*/
+backup_20260715_*/
+
+# Backup & temp
+*.bak
+*.bak_*
+app.py (2).bak
+~$*.xlsx
 __pycache__/
+*.pyc
 build/
 dist/
-*.spec
+scratch/
+.p3ste-browser/
+.p3ste-cookies.json
+.p3ste-failed.json
+.p3ste-logins.json
 
-# Obsidian workspace (session-specific, don't track)
+# Data aset besar (jangan push 20MB+ xlsx/pdf private)
+DATA ASET RESOR 2026.pdf
+DATA ASET RESOR 2026.xlsx
+data aset.xlsx
+~$data aset.xlsx
+audit_*.xlsx
+
+# Binary besar
+tesseract/
+Sintelis_Utility_v1.1.0.exe
+*.exe
+*.zip
+
+# Obsidian workspace (session-specific)
 .obsidian/workspace.json
 .obsidian/workspace-mobile.json
-.obsidian/workspace.json
 .obsidian/hotkeys.json
 .obsidian/appearance.json
 .obsidian/core-plugins-migration.json
+.obsidian/workspace-mobile.json
+
+# Python
+venv/
+.venv/
+*.log
+app.log
+

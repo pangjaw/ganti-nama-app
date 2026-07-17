@@ -67,13 +67,13 @@ def detect_doc(text_flat, text_crop, filename_upper):
 
     # Fungsi helper untuk menentukan lokasi standar
     def get_standard_loc(text):
-        text = text.upper().replace(" ", "")
-        if "BOJONGGEDE" in text: return "BJD-CLT"
+        text = text.upper()
+        if "BOJONGGEDE" in text or "BOJONG GEDE" in text: return "BJD-CLT"
         if "CIOMAS" in text or "COS" in text: return "COS"
         if "CICURUG" in text or "CCR" in text: return "CCR"
         if "CIGOMBONG" in text or "CGB" in text: return "CGB"
         if "MASENG" in text or "MSG" in text: return "MSG"
-        if "BOGORPALEDANG" in text or "PALEDANG" in text or "BOP" in text: return "BOP"
+        if "BOGORPALEDANG" in text or "PALEDANG" in text: return "BOP"
         if "BATUTULIS" in text or "BTT" in text: return "BTT"
         if "CILEBUT" in text or "CLT" in text: return "CLT"
         if "BOGOR" in text: return "BOO"
@@ -521,8 +521,7 @@ def detect_doc(text_flat, text_crop, filename_upper):
         loc = extract_funcloc(text_crop) or get_dual_loc(text_flat)
         assets.append({"id": "", "loc": loc})
 
-    elif ("SERAT OPTIK" in text_flat and re.search(r'\bER\b', text_flat)) or \
-         (not text_flat.strip() and "SERAT OPTIK" in filename_upper and " ER " in filename_upper):
+    elif "SERAT OPTIK" in text_flat and re.search(r'\bER\b', text_flat):
         # ER/ER TELKOM: parse first OTB from filename, location from OCR
         kode, kategori = "BPBKF4", "SERAT OPTIK"
         
@@ -536,27 +535,19 @@ def detect_doc(text_flat, text_crop, filename_upper):
         if has_telkom_ocr or has_telkom_fn:
             er_type = "ER TELKOM"
         
-        # Extract OTB range from filename (supports "OTB X" or "OTB X-Y")
-        otb_range_match = re.search(r'OTB\s+(\d+)-(\d+)', filename_upper)
-        otb_single_match = re.search(r'OTB\s+(\d+)(?!\s*-)', filename_upper)
-        if otb_range_match:
-            first_otb = int(otb_range_match.group(1))
-            otb_min = int(otb_range_match.group(1))
-            otb_max = int(otb_range_match.group(2))
-        elif otb_single_match:
-            first_otb = int(otb_single_match.group(1))
-            otb_min = first_otb
-            otb_max = first_otb
-        else:
-            first_otb = 1
-            otb_min = 1
-            otb_max = 1
+        # Extract OTB number from filename
+        otb_match = re.search(r'OTB\s+(\d+)', filename_upper)
+        first_otb = int(otb_match.group(1)) if otb_match else 1
         
-        # Override with OCR if available (more comprehensive)
+        # Extract ALL OTB numbers from OCR to compute range
         all_otb_nums = [int(m.group(1)) for m in re.finditer(r'OTB\s+(\d+)', text_flat)]
         if all_otb_nums:
             otb_min = min(all_otb_nums)
             otb_max = max(all_otb_nums)
+        else:
+            # Fallback: use first_otb from filename
+            otb_min = first_otb
+            otb_max = first_otb
         
         # Extract location from OCR (first OTB line)
         loc = None

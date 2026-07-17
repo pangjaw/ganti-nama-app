@@ -103,14 +103,17 @@ def get_jpl_inline_loc(text_snippet):
 
 ## 📊 Status Implementasi
 
-- `[ ]` **Bug 1** — Filter M+digit
-- `[ ]` **Bug 2** — Urutan alternation ZP
-- `[ ]` **Bug 3** — PDSE location
-- `[ ]` **Bug 4** — JPL urutan lokasi
-- `[ ]` **Bug 5** — MB101 lokasi per-signal
-- `[ ]` **Bug 6** — ZP101A lokasi per-ZP
-- `[ ]` **Bug 7-10** — Fallback chain triple location
-- `[ ]` **Test & verifikasi** dengan file PDF asli
+- `[x]` **Bug 1** — Filter M+digit ✅ M314 dari MJ14 tidak muncul
+- `[x]` **Bug 2** — Regex ZP ✅ Suffix panjang benar (ZP26A bukan ZP26)
+- `[x]` **Bug 3** — PDSE location ✅ Pakai `extract_funcloc` → MSG
+- `[x]` **Bug 4** — JPL urutan lokasi ✅ CLT-BOO (urutan dokumen, bukan alphabetical)
+- `[x]` **Bug 5** — Signal lokasi per-aset ✅ Scan per-baris text_crop
+- `[x]` **Bug 6** — ZP lokasi per-aset ✅ Scan per-baris text_crop
+- `[x]` **Bug 7-10** — Fallback chain triple location ✅ Position-sorted + extract_funcloc
+- `[x]` **Test & verifikasi** dengan 5 file PDF sample → semua output sesuai harapan
+
+> [!tip] Hasil test: [test_bugfix_v2.py](file:///c:/Users/dikarm/Documents/Server/ganti-nama-app/test_bugfix_v2.py)
+> Jalankan `python test_bugfix_v2.py` untuk verifikasi ulang kapan saja.
 
 ---
 
