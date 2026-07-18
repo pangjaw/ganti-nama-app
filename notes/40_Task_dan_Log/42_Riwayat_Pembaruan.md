@@ -1,10 +1,10 @@
 # 📜 Riwayat Pembaruan Script WO
 
-#task #playwright #changelog
+#task #changelog
 
 > [!tip] Kembali ke [[00_Dashboard|Dashboard Utama]]
 
-Berikut adalah riwayat tahapan pembuatan dan penyempurnaan script otomasi pengisian Work Order (`create_p3ste_wo.py`).
+Berikut adalah riwayat tahapan pembuatan dan penyempurnaan aplikasi Sintelis Utility.
 
 ---
 
@@ -62,18 +62,7 @@ Berikut adalah riwayat tahapan pembuatan dan penyempurnaan script otomasi pengis
 ## 🔄 Koneksi Antar Note
 
 - [[41_Rencana_Perbaikan]] — Rencana pengembangan berikutnya
-- [[12_Otomasi_Work_Order]] — Panduan penggunaan script ini
-- [[23_Otomasi_Browser_Playwright]] — Mekanisme browser yang digunakan
-- [[31_Mapping_Checklist]] — Mapping yang diaplikasikan
-- [[00_Dashboard|Kembali ke Dashboard]]
-
----
-
-## 🔄 Koneksi Antar Note
-
-- [[41_Rencana_Perbaikan]] — Rencana pengembangan berikutnya
-- [[12_Otomasi_Work_Order]] — Panduan penggunaan script ini
-- [[23_Otomasi_Browser_Playwright]] — Mekanisme browser yang digunakan
+- [[22_Logika_OCR]] — Alur OCR & deteksi dokumen
 - [[31_Mapping_Checklist]] — Mapping yang diaplikasikan
 - [[00_Dashboard|Kembali ke Dashboard]]
 
@@ -106,3 +95,21 @@ Berikut adalah riwayat tahapan pembuatan dan penyempurnaan script otomasi pengis
   * 2 bulanan files (non-JPL, non-ER)
   * 0 error, semua duplikat di-handle dengan benar
 * **JANUARI 2026 (383 file)**: siap test batch full.
+
+---
+
+### 🚀 Tahap 7 — Bug Fix Batch 5 (18-19 Juli 2026)
+* **Blank Screen Minimize**:
+  * WebView2 GPU rendering context corrupt setelah minimize lama.
+  * Fix: `--disable-gpu` env var + replace resize dengan `location.reload()` di `on_restored`.
+* **Cancel → Proses Ulang Stuck**:
+  * `cancelledRef.current` tidak di-reset saat proses baru.
+  * Fix: tambah `cancelledRef.current = false` di awal `handleProcess`.
+* **PTPP JPL ELEKTRIK → JPL BNR**:
+  * Regex `JPL\s+([A-Z0-9]+)` tangkap "ELEKTRIK" bukan "BNR".
+  * Fix: regex jadi `JPL\s+(?:ELEKTRIK\s+)?([A-Z0-9]+)` — skip noise word.
+* **PDSE/PTDS/PTLS → DISETUJUI**:
+  * OCR gagal + filename fallback tidak punya keyword PDSE/PTDS/PTLS.
+  * Fix: 3 branch fallback baru di `filenameDetect` + filter `NOISE_WORDS` di `extractFuncloc`.
+* **Fix Validasi**: Semua 4 bugs fixed, build ulang `SintelisUtility.exe`.
+* Lihat [[46_Temuan_dan_Fix_Batch_5|detail lengkap di note Batch 5]].

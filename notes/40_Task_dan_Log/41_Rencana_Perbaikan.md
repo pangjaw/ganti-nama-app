@@ -4,42 +4,35 @@
 
 > [!tip] Kembali ke [[00_Dashboard|Dashboard Utama]]
 
-Halaman ini digunakan untuk memantau rencana perbaikan, prioritas fitur, dan status implementasi kode pada proyek.
+Halaman ini digunakan untuk memantau rencana perbaikan dan backlog pengembangan **Sintelis Utility**.
 
 ---
 
-## ✅ Tugas yang Sudah Selesai (Completed Tasks)
+## ✅ Tugas yang Sudah Selesai
 
-- `[x]` **Sederhanakan area login di dashboard utama.**
-  - *Target*: Tombol depan di dashboard GUI kini disederhanakan hanya menyisakan tombol `Data Login` dan `Refresh`.
-  - *Target*: Aksi tambah (create), edit, hapus, dan pilih login dipindahkan ke dalam dialog pop-up `Data Login` agar tidak meramaikan tampilan utama.
-- `[x]` **Penyatuan manajemen data login dalam satu wadah.**
-  - *Target*: Memungkinkan user melihat akun login aktif.
-  - *Target*: Mengintegrasikan proses pilih, buat baru, edit password/NIPP, dan hapus profil data login langsung dari UI.
-- `[x]` **Reuse hasil pemindaian halaman dan data rekap.**
-  - *Target*: Jika user sudah mengeklik `Tampilkan total halaman dan data`, lalu kemudian mengeklik `Download`, proses download tidak mengulang dari nol lagi.
-  - *Target*: Memakai ulang session browser yang aktif serta halaman rekap yang sudah dimuat sebelumnya.
-- `[x]` **Meminimalkan lingkup perubahan kode (Keep Changes Small).**
-  - *Fokus berkas*: `desktop_app.py` dan `download_p3ste_rekap.py`.
+- `[x]` **Split-view hasil/error + log** — Panel kanan sekarang tab hasil/error di samping log.
+- `[x]` **Export Excel (XLSX)** — 3 sheet: Input Files, Hasil, Error.
+- `[x]` **Rapihkan vault** — Hapus 60+ file usang, ~130 MB tesseract, desktop app lama.
+- `[x]` **Dashboard Obsidian diperbarui** — Mencerminkan arsitektur web-app + Python WebView.
+- `[x]` **Client-side PDF processing** — PDF.js + Tesseract.js di browser, tanpa upload ke server.
 
 ---
 
 ## 📝 Agenda Pengembangan Mendatang (Backlog)
 
-Berikut adalah daftar peningkatan fitur berikutnya untuk modul Otomasi Work Order (`create_p3ste_wo.py`):
-
-- `[ ]` **Implementasi Mode Live (Submit Otomatis)**
-  - *Target*: Menambahkan opsi/parameter `--live` agar script otomatis mengeklik tombol `Simpan` atau `Kirim SAP` setelah pengisian selesai.
-- `[ ]` **Pemrosesan Multi-Batch (Lebih dari 5 Item)**
-  - *Target*: Memproses seluruh item input secara berurutan dalam beberapa batch (per 5 item), bukan hanya membatasi pada batch pertama.
-- `[ ]` **Validasi Input Awal Sebelum Launch Browser**
-  - *Target*: Memvalidasi format input user (tanggal, jam, kecocokan keyword asset) sebelum browser Playwright dibuka untuk menghemat waktu dan meminimalisir error di tengah jalan.
-- `[ ]` **Logging Hasil Pengisian Per Batch**
-  - *Target*: Menyimpan file log lokal berupa laporan isian yang berhasil dan yang gagal dicocokkan untuk ditinjau ulang oleh user.
+- `[ ]` **Perbaikan akurasi OCR untuk Serat Optik OTB**
+  - *Target*: Perbaiki regex negative lookbehind di detector.js untuk exclude `ODF/OTB` core count.
+- `[ ]` **Progress bar per file**
+  - *Target*: Tampilkan progress granular per file, bukan hanya counter.
+- `[ ]` **Dark/light mode toggle**
+  - *Target*: Opsi switch tema untuk aksesibilitas.
+- `[ ]` **Batch rename preview**
+  - *Target*: Preview nama file hasil rename sebelum simpan, dengan opsi edit manual.
 
 ---
 
 ## 🔄 Koneksi Antar Note
 
-- [[44_Temuan_dan_Rencana_Perbaikan_v3]] — Temuan & rencana perbaikan terkini (Batch 3)
 - [[42_Riwayat_Pembaruan]] — Riwayat update yang sudah dilakukan
+- [[44_Temuan_dan_Rencana_Perbaikan_v3]] — Temuan & rencana terkini
+- [[00_Dashboard|Kembali ke Dashboard]]

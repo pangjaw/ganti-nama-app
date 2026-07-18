@@ -1,5 +1,7 @@
 # 🔄 Handover PC Kantor — Pending Tasks
 
+#task #handover
+
 > [!important] Context
 > Tanggal handover: 17 Juli 2026. User mau kerja, task belum 100%. Lanjut di PC kantor.
 > Repo: `pangjaw/ganti-nama-app` | Branch: main | Ignore: `FILE BUG/`

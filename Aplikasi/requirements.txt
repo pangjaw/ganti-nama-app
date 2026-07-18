@@ -1,7 +1,0 @@
-Flask
-Werkzeug
-pdf2image
-pytesseract
-Pillow
-gunicorn
-playwright

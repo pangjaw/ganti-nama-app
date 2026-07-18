@@ -4,100 +4,93 @@
 
 > [!tip] Kembali ke [[00_Dashboard|Dashboard Utama]]
 
-Halaman ini mendokumentasikan organisasi berkas (file structure) serta peran masing-masing modul/script dalam proyek **Ganti Nama App & Otomasi P3-STE**.
+Halaman ini mendokumentasikan organisasi berkas serta peran masing-masing komponen dalam proyek **Sintelis Utility**.
 
 ---
 
 ## 📁 Pohon Direktori Utama
 
-Berikut adalah berkas-berkas penting yang membentuk proyek ini:
-
 ```text
 ganti-nama-app/
 │
-├── .obsidian/                  # Folder konfigurasi Obsidian Vault (Workspace ini)
-├── notes/                      # Dokumentasi & basis pengetahuan proyek (Markdown)
+├── .agents/                     # Custom agent rules (Antigravity)
+├── .obsidian/                   # Konfigurasi Obsidian Vault
+├── notes/                       # Dokumentasi & basis pengetahuan (Markdown)
 │   ├── 00_Dashboard.md
 │   ├── 10_Panduan_Penggunaan/
 │   ├── 20_Arsitektur_Kode/
-│   └── 30_Database_Pengetahuan/
+│   ├── 30_Database_Pengetahuan/
+│   └── 40_Task_dan_Log/
 │
-├── templates/                  # Template HTML untuk web service Flask
+├── web-app/                     # **PROJECT UTAMA** — React SPA + Python WebView
+│   ├── src/                     # Source React
+│   │   ├── App.jsx              # Komponen utama UI — upload, proses, simpan
+│   │   ├── index.css            # Premium dark theme CSS
+│   │   ├── main.jsx             # Entry point React
+│   │   └── utils/               # Library pendukung
+│   │       ├── detector.js      # detectDoc() — deteksi tipe dokumen
+│   │       ├── pdfProcessor.js  # PDF.js render + ekstrak teks
+│   │       └── fsHandler.js     # File System Access API + ZIP handler
+│   ├── dist/                    # Vite build output (production)
+│   ├── build_exe.spec           # PyInstaller spec untuk desktop EXE
+│   ├── run_desktop_webview.py   # Python WebView + API OCR backend
+│   ├── index.html               # HTML entry (Vite)
+│   ├── vite.config.js
+│   └── package.json
 │
-├── 1-klik.bat                  # Shortcut menjalankan desktop GUI
-├── download p3ste.bat          # Shortcut menjalankan download rekap via CLI
-├── push_github.bat             # Shortcut push perubahan ke GitHub
+├── Aplikasi/
+│   └── poppler/                 # Poppler binary (PDF → gambar)
 │
-├── app.py                      # Backend server Flask untuk OCR & Rename PDF
-├── desktop_app.py              # Aplikasi desktop GUI (Tkinter) manajemen login & download
-├── download_p3ste_rekap.py     # Modul inti otomasi download rekap (Playwright)
-├── create_p3ste_wo.py          # Modul otomasi pengisian form Work Order (Playwright)
-├── compare_pdf_folders.py      # Modul pembantu untuk membandingkan jumlah PDF di dua folder
+├── data-aset/                   # File referensi: DATA ASET RESOR 2026.pdf/.xlsx
 │
-├── requirements.txt            # Daftar package dependencies Python
-├── packages.txt                # Kebutuhan package Linux (untuk setup docker/server)
-├── Dockerfile                  # Konfigurasi containerization Flask app
-│
-├── .p3ste-logins.json          # [Auto-Generated] Menyimpan profil & password lokal
-└── .p3ste-browser/             # [Auto-Generated] State/cookie browser Chromium Playwright
+├── compare_pdf_folders.py       # Utility perbandingan folder PDF
+├── push_github.bat              # Push ke GitHub
+├── requirements.txt             # Dependencies Python
+└── README.md
 ```
 
 ---
 
 ## 🛠️ Deskripsi Peran Komponen
 
-### 1. `desktop_app.py`
-Merupakan antarmuka pengguna (GUI) berbasis Tkinter yang bertindak sebagai control center.
-*   **Peran**:
-    *   Menampilkan status login aktif saat ini.
-    *   Membuka modal `LoginDialog` (`LoginDialog` di `desktop_app.py`) untuk menambah/mengedit/menghapus konfigurasi NIPP dan password.
-    *   Mengalihkan output console (`stdout`) dari library `download_p3ste_rekap.py` ke box log GUI secara real-time.
-    *   Menampilkan progress bar saat proses download berjalan.
+### 1. `web-app/` (React SPA + Vite)
+Adalah **project utama** Sintelis Utility. React single-page application yang berjalan di browser WebView.
+- **Peran**:
+  - Drag & drop / pilih file PDF
+  - Render PDF via PDF.js di browser
+  - Panggil API OCR ke backend Python
+  - Deteksi tipe dokumen → rename otomatis
+  - Simpan hasil ke folder atau download ZIP
+  - Export hasil/error ke Excel (XLSX)
 
-### 2. `download_p3ste_rekap.py`
-Merupakan engine otomasi web untuk mengunduh berkas rekap checklist P3-STE.
-*   **Peran**:
-    *   Membuka browser Playwright secara asynchronous.
-    *   Membaca kredensial dari `.p3ste-logins.json` untuk login ke `https://p3-ste.kai.id`.
-    *   Membuka halaman Rekap Checklist, mem-filter rentang tanggal, dan memicu download PDF untuk tiap checklist.
-    *   Menyimpan file PDF ke folder Downloads lokal (default: `~/Downloads/P3STE`).
+### 2. `run_desktop_webview.py` (Python Backend + Native Window)
+Backend Python yang menjalankan:
+- **Tesseract OCR** via `/api/ocr` endpoint (pytesseract + pdf2image)
+- **WebView window** — native desktop window yang me-load React build
+- **Static file server** — serve `dist/` folder
+- **Poppler path** — mengarah ke `Aplikasi/poppler/` untuk konversi PDF→gambar
 
-### 3. `create_p3ste_wo.py`
-Engine otomasi untuk mengisi form tambah program realisasi (Work Order) baru.
-*   **Peran**:
-    *   Membagi data input yang besar menjadi batch-batch berukuran 5 item (sesuai performa web).
-    *   Mendeteksi kode stasiun/lokasi dan kode asset secara dinamis dari short text yang di-input user.
-    *   Mengotomasi pembuatan form di browser Chromium Playwright agar siap direview sebelum disimpan.
+### 3. `detector.js` (OCR Detection Logic)
+Mirror dari logika `detect_doc()` Python, dijalankan di browser:
+- 15 branch deteksi: Wesel, Sinyal, AXC, Serat Optik (ER/JPL), PDSE, PTDS, PTLS, PTLP, CTC-CTS, Catu Daya, Radio Basestation, Waystation, Pintu Perlintasan, Point Lock
+- Regex matching + keyword detection dari teks hasil OCR
 
-### 4. `app.py`
-Aplikasi web backend berbasis Flask untuk memproses penggantian nama file PDF secara otomatis menggunakan kecerdasan buatan OCR.
-*   **Peran**:
-    *   Menerima upload file PDF.
-    *   Mengonversi halaman pertama PDF menjadi gambar menggunakan `pdf2image`.
-    *   Melakukan cropping 30% area atas (lokasi header dokumen) lalu melakukan OCR text extraction dengan `pytesseract`.
-    *   Menggunakan regex untuk mendeteksi tipe dokumen, kode asset, stasiun, dll.
-    *   Menghasilkan file ZIP baru berisi PDF yang sudah di-rename dengan pola nama yang konsisten.
-
-### 5. `compare_pdf_folders.py`
-Utility sederhana untuk mencocokkan kelengkapan file hasil download di dua lokasi folder berbeda.
-*   **Peran**:
-    *   Menghitung jumlah file PDF per asset dengan cara men-strip format tanggal pada nama file.
-    *   Menampilkan laporan perbandingan folder A dan B di terminal, memberi tahu folder mana yang kekurangan file untuk asset tertentu.
+### 4. `compare_pdf_folders.py`
+Utility pembanding isi dua folder PDF untuk mencari file yang hilang/tidak lengkap.
 
 ---
 
-## 💾 File Data Lokal (Abaikan dari Version Control)
+## 💾 File Data Lokal
 
-*   **.p3ste-logins.json**: File ini menyimpan profil NIPP, nama, dan hash password lokal yang di-input lewat GUI. **Penting:** File ini tidak boleh di-commit ke Git karena berisi informasi kredensial sensitif.
-*   **.p3ste-browser/**: Direktori profil user data browser Chromium. Menyimpan cookie dan session login agar pengguna tidak perlu mengisi captcha/login berulang kali setiap kali menjalankan otomasi.
-*   **templates/**: Folder template Flask (index.html) jika server diakses lewat browser. Lihat [[11_Menjalankan_Aplikasi|Panduan Menjalankan]].
+- **Aplikasi/poppler/**: Binary Poppler untuk `pdf2image` mengkonversi PDF ke gambar sebelum OCR.
+- **data-aset/**: File referensi `DATA ASET RESOR 2026.pdf` dan `.xlsx` — acuan resmi UPT Resor Sintelis 1.21 BOO.
 
 ---
 
 ## 🔄 Koneksi Antar Note
 
-- [[22_Logika_OCR]] — Detail alur OCR di `app.py`
-- [[23_Otomasi_Browser_Playwright]] — Detail Playwright di `download_p3ste_rekap.py`
-- [[51_Alur_Kerja_Agent]] — Diagram dependency antar script
-- [[32_Arsitektur_Deploy]] — File Dockerfile & firebase.json
+- [[22_Logika_OCR]] — Detail alur OCR & deteksi dokumen
+- [[34_Sintelis_Utility]] — Ringkasan teknis & build
+- [[35_Aturan_Serat_Optik_OTB]] — Aturan lengkap SO OTB
+- [[11_Menjalankan_Aplikasi]] — Cara menjalankan
 - [[00_Dashboard|Kembali ke Dashboard]]

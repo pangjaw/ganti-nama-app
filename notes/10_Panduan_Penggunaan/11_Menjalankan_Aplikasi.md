@@ -4,97 +4,78 @@
 
 > [!tip] Kembali ke [[00_Dashboard|Dashboard Utama]]
 
-Note ini menjelaskan cara mempersiapkan lingkungan (environment) dan menjalankan berbagai script/aplikasi yang ada di dalam project ini.
+Note ini menjelaskan cara menjalankan **Sintelis Utility** — aplikasi desktop OCR & rename PDF.
 
 ---
 
 ## 📋 Prasyarat Sistem
 
-Sebelum menjalankan script, pastikan komponen berikut telah terinstall:
-
-1.  **Python 3.10+**
-2.  **Tesseract OCR** (untuk modul OCR di `app.py`)
-    *   **Windows**: Install ke `C:\Program Files\Tesseract-OCR\tesseract.exe` (atau sesuaikan path-nya di `app.py`). Pastikan menambahkan support bahasa `ind` dan `eng`.
-    *   **Linux**: `sudo apt install tesseract-ocr tesseract-ocr-ind`
-3.  **Poppler** (prasyarat untuk `pdf2image` dalam konversi PDF)
-    *   **Windows**: Unduh poppler binary dan tambahkan path `bin/` ke Environment Variables sistem Anda.
+1. **Python 3.10+** (untuk backend OCR)
+2. **Tesseract OCR** — install ke `C:\Program Files\Tesseract-OCR\tesseract.exe`
+   - Pastikan bahasa `ind` dan `eng` terinstall
+3. **Node.js 18+** (untuk development React)
+4. **Poppler** (tersedia di `Aplikasi/poppler/`)
 
 ---
 
 ## 🛠️ Instalasi Dependencies
 
-Jalankan perintah berikut di terminal/Powershell untuk mengunduh library yang dibutuhkan:
-
 ```powershell
-# Menggunakan requirements.txt
+# Python dependencies
 pip install -r requirements.txt
 
-# Pastikan Playwright browser terinstall (digunakan untuk otomasi web)
-playwright install chromium
+# Node dependencies (hanya untuk dev mode)
+cd web-app
+npm install
 ```
 
 ---
 
-## 🚀 Cara Menjalankan Komponen
+## 🚀 Cara Menjalankan
 
-### 1. Aplikasi Desktop (GUI)
-Aplikasi utama untuk mengelola login P3-STE dan mengunduh rekap checklist secara otomatis.
-*   **Cara Run**:
-    ```powershell
-    python desktop_app.py
-    ```
-*   **Fitur Utama**:
-    *   Manajemen akun/login dalam satu UI (Data Login).
-    *   Memilih akun aktif, menambah akun baru, mengedit, atau menghapus.
-    *   Tombol `Refresh` untuk menyegarkan status data login.
-    *   Proses download rekap checklist dengan progress bar.
-    *   Shortcut run melalui file `1-klik.bat`.
+### 1. Production: EXE Portable (Rekomendasi)
 
-### 2. Flask OCR Web Server (`app.py`)
-Web service backend untuk menerima file PDF, mendeteksi isi halaman dengan OCR, dan menghasilkan penamaan file baru yang konsisten.
-*   **Cara Run**:
-    ```powershell
-    python app.py
-    ```
-*   *Default port*: `http://127.0.0.1:5000` (atau port Flask standar).
-*   **Penggunaan**: Mengirimkan file PDF ke endpoint API atau mengakses UI templates sederhana (jika dikonfigurasi).
+Double-click `SintelisUtility.exe` di folder output build.
+- Tidak perlu install Python atau Node.js
+- Semua dependencies sudah dibundling oleh PyInstaller
+- Window native (WebView) langsung terbuka
 
-### 3. Otomasi Pengisian Work Order (`create_p3ste_wo.py`)
-Script CLI untuk memasukkan data Work Order secara massal ke dalam sistem P3-STE.
-*   **Cara Run**:
-    ```powershell
-    python create_p3ste_wo.py
-    ```
-*   **Uji Coba Mandiri (Self-Test)**:
-    Untuk menguji validitas parsing waktu, pembagian batch, normalisasi teks, dan ekstraksi keyword tanpa membuka browser:
-    ```powershell
-    python create_p3ste_wo.py --self-test
-    ```
-    *Selengkapnya dapat dibaca di [[12_Otomasi_Work_Order|Panduan Otomasi Work Order]].*
+### 2. Development: React Dev + Python Backend
 
-### 4. Pembanding Folder PDF (`compare_pdf_folders.py`)
-Script bantu untuk membandingkan isi dua folder PDF guna mencari file yang hilang/tidak lengkap berdasarkan kecocokan nama asset.
-*   **Cara Run**:
-    ```powershell
-    python compare_pdf_folders.py --folder-a "path/ke/folder/A" --folder-b "path/ke/folder/B" --words 3
-    ```
-    *Parameter `--words 3` menentukan jumlah kata depan nama file yang dijadikan basis pencocokan (mengabaikan format tanggal di awal).*
+```powershell
+# Terminal 1 — Python backend (OCR API + WebView)
+cd web-app
+python run_desktop_webview.py
 
----
+# Terminal 2 — React dev server (optional, untuk hot-reload)
+cd web-app
+npm run dev
+```
 
-## 🗂️ Shortcut Cepat (.bat)
-Di root folder proyek, terdapat file `.bat` untuk mempermudah eksekusi:
-- `1-klik.bat` → Menjalankan `desktop_app.py`.
-- `download p3ste.bat` → Menjalankan script download rekap secara langsung via command line.
-- `push_github.bat` → Melakukan sinkronisasi/push perubahan kode ke repository GitHub. Lihat [[32_Arsitektur_Deploy|Pipeline Deployment]].
+- React dev server: `http://localhost:5173`
+- Python API: `http://localhost:8765`
+- WebView window akan otomatis terbuka
+
+### 3. Build EXE Baru
+
+```powershell
+cd web-app
+
+# 1. Build React (Vite)
+npm run build
+
+# 2. Build EXE (PyInstaller)
+pyinstaller build_exe.spec
+```
+
+Output: `dist_exe/SintelisUtility.exe`
 
 ---
 
 ## 🔄 Koneksi Antar Note
 
-- [[21_Struktur_Proyek]] — Detail peran setiap file
-- [[22_Logika_OCR]] — Alur OCR di `app.py`
-- [[23_Otomasi_Browser_Playwright]] — Setup Playwright
-- [[12_Otomasi_Work_Order]] — Panduan WO
-- [[51_Alur_Kerja_Agent]] — Alur kerja ekosistem keseluruhan
+- [[21_Struktur_Proyek]] — Detail peran setiap komponen
+- [[22_Logika_OCR]] — Alur OCR & deteksi dokumen
+- [[34_Sintelis_Utility]] — Info teknis & versi
+- [[41_Rencana_Perbaikan]] — Backlog pengembangan
 - [[00_Dashboard|Kembali ke Dashboard]]

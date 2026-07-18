@@ -1,68 +1,72 @@
 # Sintelis Utility — Ringkasan Proyek
 
+#knowledge #proyek #referensi
+
 ## Tentang App
 - **Nama**: Sintelis Utility
-- **Versi**: 1.1.0
+- **Versi**: 2.0.0
 - **Fungsi**: OCR PDF + rename otomatis file menggunakan pola regex untuk dokumen maintenance/pengawasan
-- **Tipe**: Portable EXE (tkinter + PyInstaller), no install needed
-- **Framework**: CustomTkinter + tkinterdnd2 (drag-drop PDF)
+- **Tipe**: Desktop EXE (React SPA + Python WebView, PyInstaller bundle)
+- **Framework**: React + Vite (frontend), Python WebView + Tesseract (backend)
 
 ## Fitur Inti
-1. **Drag-drop PDF** — drop file/folder langsung
-2. **OCR** — pake `pdf2image` + `pytesseract` (engine tesseract)
-3. **Pola Rename** — regex untuk `JPL`, `PTPP`, `BTP`, `BD`, dll
-4. **Real-time Log** — `progress_callback` streaming log ke UI tiap file
-5. **Save on Demand** — proses selesai → user klik **💾 Simpan** → baru extract ke folder output
-6. **Tabel 3 Tab**: "📎 File Input" | "✅ Berhasil" | "⚠️ Error" — berjejer
-7. **Counter** — emoji ✅ / ⚠️ di tiap tab
-8. **Auto-updater** — Firebase Storage (versi 1.2.0 ke atas)
+1. **Drag-drop PDF** — drop file/folder langsung dari OS
+2. **OCR** — Python backend: `pdf2image` + `pytesseract` (engine tesseract)
+3. **Deteksi Dokumen** — `detector.js`: 15 branch regex + keyword matching
+4. **Pola Rename** — regex untuk `JPL`, `PTPP`, `BTP`, `BD`, dll
+5. **Real-time Log** — `progress_callback` streaming log ke UI tiap file
+6. **Save on Demand** — proses selesai → user klik **💾 Simpan** → baru extract ke folder output
+7. **Tabel 3 Tab**: "📎 File Input" | "✅ Berhasil" | "⚠️ Error" — berjejer
+8. **Counter** — emoji ✅ / ⚠️ di tiap tab
+9. **Export Excel** — export hasil/error ke XLSX dengan 3 sheet
 
-## UI Perbaikan (v9)
+## UI Design
 - **Typography**: Segoe UI 13-18pt (judul), Consolas 13pt (log/code)
 - **Warna kontras tinggi**: putih, neon hijau `#66ff66`, merah `#ff4444`, biru `#88ccff`
+- **Dark theme premium**: glassmorphism + dynamic animations
 - **Tata letak**: 2 kolom (kiri: input/file list, kanan: tab hasil + log)
 - **Log textbox**: konsolas 13pt, bg hitam, bisa di-scroll
-- **MonitorBuild** — label status realtime di pojok kanan
 
 ## Struktur File
 ```
-Aplikasi/
-├── portable_ui.py    # UI aplikasi (portable, tkinter)
-├── app.py            # Core logic: OCR, rename, ZIP
-├── build_portable.ps1 # Build PyInstaller
-└── dist/
-    └── Sintelis Utility.exe
+web-app/
+├── src/
+│   ├── App.jsx              # Komponen utama UI
+│   ├── index.css            # Premium dark theme CSS
+│   ├── main.jsx             # Entry point React
+│   └── utils/
+│       ├── detector.js      # detectDoc() — 15 branch deteksi
+│       ├── pdfProcessor.js  # PDF.js render + ekstrak teks
+│       └── fsHandler.js     # File System Access API + ZIP handler
+├── dist/                    # Vite build output (production)
+├── build_exe.spec           # PyInstaller spec untuk desktop EXE
+├── run_desktop_webview.py   # Python WebView + API OCR backend
+├── index.html               # HTML entry (Vite)
+├── vite.config.js
+└── package.json
 ```
 
 ## Build
 ```powershell
-# 1. Hapus cache dulu
-Remove-Item -Recurse -Force "dist", "build", "*.spec" -ErrorAction SilentlyContinue
+cd web-app
 
-# 2. Build
-PowerShell -ExecutionPolicy Bypass -File .\build_portable.ps1
+# 1. Build React
+npm run build
+
+# 2. Build EXE (PyInstaller)
+pyinstaller build_exe.spec
 ```
 
-## Kritikal: Subprocess Silent Patch
-monkey-patch `subprocess.Popen.__init__` di `portable_ui.py` biar CMD nggak flashing.
-```python
-import subprocess
-_original_popen_init = subprocess.Popen.__init__
-def _silent_popen_init(self, *args, **kwargs):
-    kwargs.setdefault("startupinfo", si = subprocess.STARTUPINFO())
-    si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-    kwargs["startupinfo"] = si
-    return _original_popen_init(self, *args, **kwargs)
-subprocess.Popen.__init__ = _silent_popen_init
-```
+Output: `dist_exe/SintelisUtility.exe`
 
 ## Teknikal Info
-- **Python**: 3.14
-- **Dependencies**: customtkinter, tkinterdnd2, pytesseract, pdf2image, pillow, pandas, openpyxl
-- **PyInstaller hooks**: butuh `--collect-data pillow` dan hook `tkinterdnd2`
-- **Firebase**: `ganti-nama-file-update` bucket GCS
+- **Python**: 3.10+
+- **Node.js**: 18+
+- **Dependencies**: React, Vite, PDF.js, pytesseract, pdf2image, Pillow
+- **PyInstaller**: bundling Python backend + Tesseract + Poppler + React static files
 
 ## Common Issues
 1. **EXE terkunci saat build ulang** → `taskkill /f /im "Sintelis Utility.exe"` + delete cache
-2. **Tesseract error** → pastikan `tesseract/` di folder yang sama dgn EXE, path `TESSDATA_PREFIX`
-3. **MonitorBuild tidak berjalan** → cek tab name di [tab_view.py], UI pake `"📎 File Input"`
+2. **Tesseract error** → pastikan `tesseract.exe` terinstall di `C:\Program Files\Tesseract-OCR\`
+3. **Poppler error** → pastikan `Aplikasi/poppler/` ada dan path di `run_desktop_webview.py` benar
+4. **React build gagal** → cek `node_modules`, jalankan `npm install` ulang

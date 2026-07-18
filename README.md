@@ -1,28 +1,53 @@
-# README
+# Sintelis Utility
 
-## Plan perbaikan desktop app
+Aplikasi desktop **OCR PDF + rename otomatis** untuk dokumen maintenance/pengawasan UPT Resor Sintelis 1.21 BOO.
 
-- [x] Sederhanakan area login di dashboard.
-  - target: tombol depan tinggal `Data Login` dan `Refresh`
-  - create/edit/hapus/pilih dipindah ke dalam dialog `Data Login`
+## Arsitektur
 
-- [x] Satukan manajemen data login dalam satu tempat.
-  - target: lihat data login aktif
-  - target: pilih login
-  - target: buat login
-  - target: edit login
-  - target: hapus login
+- **Frontend**: React SPA (Vite) — `web-app/src/`
+- **Backend**: Python WebView + Tesseract OCR — `web-app/run_desktop_webview.py`
+- **Build**: PyInstaller → `SintelisUtility.exe` (portable, single-file)
 
-- [x] Reuse hasil `Tampilkan total halaman dan data`.
-  - target: kalau user sudah klik `Tampilkan...`, lalu klik `Download`, proses tidak mulai dari nol lagi
-  - target: session browser dan halaman rekap yang sudah siap dipakai ulang
+```
+web-app/
+├── src/
+│   ├── App.jsx              # React SPA — UI upload, proses, simpan
+│   ├── index.css            # Premium dark theme
+│   └── utils/
+│       ├── detector.js      # detectDoc() — 15 branch deteksi
+│       ├── pdfProcessor.js  # PDF.js render + ekstrak teks
+│       └── fsHandler.js     # File System Access API + ZIP
+├── run_desktop_webview.py   # Python backend + native window
+├── build_exe.spec           # PyInstaller spec
+└── package.json
+```
 
-- [x] Jaga perubahan tetap kecil.
-  - fokus file:
-    - `desktop_app.py`
-    - `download_p3ste_rekap.py`
+## Quick Start
 
-## Catatan
+```powershell
+# Production: double-click SintelisUtility.exe (no install needed)
 
-- Akar bug lama: `normalize_args()` terpanggil dobel.
-- Akar bug login lama: password tersimpan bisa salah, jadi perlu edit/hapus login dari UI.
+# Development:
+cd web-app
+pip install -r ../requirements.txt
+python run_desktop_webview.py    # Terminal 1 — backend + window
+npm run dev                      # Terminal 2 — React hot-reload (optional)
+
+# Build EXE:
+npm run build
+pyinstaller build_exe.spec
+```
+
+## Fitur
+
+- Drag & drop PDF dari OS
+- OCR Tesseract (ind + eng) + pdf2image
+- 15 branch deteksi dokumen (Wesel, Sinyal, AXC, Serat Optik, PDSE, PTDS, PTLS, PTLP, CTC-CTS, Catu Daya, Radio Basestation, Waystation, Pintu Perlintasan, Point Lock)
+- Tabel 3-tab: 📎 File Input | ✅ Berhasil | ⚠️ Error
+- Export Excel (XLSX) 3 sheet
+- Simpan hasil rename ke folder atau download ZIP
+
+## Dokumentasi
+
+Lihat [notes/](notes/) — Obsidian vault dengan panduan penggunaan, arsitektur kode, basis pengetahuan, dan task log.
+
