@@ -20,9 +20,14 @@ export default function App() {
   const [errors, setErrors] = useState([]);
   const [logs, setLogs] = useState([]);
   const [activeTab, setActiveTab] = useState('hasil');
+  const [paused, setPaused] = useState(false);
+  const [errorFileNames, setErrorFileNames] = useState([]);
   const logEndRef = useRef();
   const inputRef = useRef();
   const cancelledRef = useRef(false);
+  const pausedRef = useRef(false);
+  const resumeRef = useRef(null);
+  const processRef = useRef(null); // ref ke handleProcess agar handleRetryErrors tidak stale
 
   // Force re-render key — digunakan saat window jadi visible lagi setelah minimize
   // Bug WebView2: React state changes saat window hidden tidak di-paint.
@@ -89,44 +94,86 @@ export default function App() {
 
   const handleCancel = useCallback(() => {
     cancelledRef.current = true;
+    // Jika sedang pause, resume dulu agar loop bisa keluar
+    pausedRef.current = false;
+    if (resumeRef.current) { resumeRef.current(); resumeRef.current = null; }
+    setPaused(false);
     addLog('error', 'Proses dibatalkan pengguna.');
   }, [addLog]);
 
-  const handleProcess = useCallback(async () => {
-    if (!files.length) return;
-    cancelledRef.current = false;  // Reset cancel flag untuk proses baru
+  const handlePause = useCallback(() => {
+    pausedRef.current = true;
+    setPaused(true);
+    addLog('info', 'Proses dijeda. Klik Lanjutkan untuk melanjutkan.');
+  }, [addLog]);
+
+  const handleResume = useCallback(() => {
+    pausedRef.current = false;
+    setPaused(false);
+    if (resumeRef.current) { resumeRef.current(); resumeRef.current = null; }
+    addLog('info', 'Proses dilanjutkan.');
+  }, [addLog]);
+
+  // handleProcess: opsional terima fileList untuk retry-error-only
+  const handleProcess = useCallback(async (fileList) => {
+    const targetFiles = Array.isArray(fileList) ? fileList : files;
+    if (!targetFiles.length) return;
+
+    cancelledRef.current = false;
+    pausedRef.current = false;
+    setPaused(false);
+    setErrorFileNames([]);
     setProcessing(true);
     setLogs([]);
-    setProgress({ current: 0, total: files.length });
+    setProgress({ current: 0, total: targetFiles.length });
     setMessage(null); setResults([]); setErrors([]);
 
-    addLog('info', `Mulai proses ${files.length} file...`);
+    const TIMEOUT_MS = 30000; // 30 detik per file
+    addLog('info', `Mulai proses ${targetFiles.length} file...`);
     const allResultItems = [];
     const soErAssets = [];
     const soBulananAssets = [];
     const errorList = [];
+    const erroredFiles = []; // track File objects yang error untuk retry
 
     // Parallel processing: 4 file sekaligus
     const CONCURRENCY = 4;
     let globalIdx = 0;
 
-    for (let ci = 0; ci < files.length; ci += CONCURRENCY) {
+    for (let ci = 0; ci < targetFiles.length; ci += CONCURRENCY) {
+      // --- Cek cancel ---
       if (cancelledRef.current) {
         setProcessing(false);
         setProgress({ current: 0, total: 0 });
         return;
       }
 
-      const chunk = files.slice(ci, ci + CONCURRENCY);
+      // --- Cek pause: tunggu sampai resume dipanggil ---
+      while (pausedRef.current && !cancelledRef.current) {
+        await new Promise(resolve => { resumeRef.current = resolve; });
+      }
+      if (cancelledRef.current) {
+        setProcessing(false);
+        setProgress({ current: 0, total: 0 });
+        return;
+      }
+
+      const chunk = targetFiles.slice(ci, ci + CONCURRENCY);
       const chunkStartIdx = ci;
 
       // Log semua file di chunk ini
       for (let j = 0; j < chunk.length; j++) {
-        addLog('processing', `[${chunkStartIdx + j + 1}/${files.length}] OCR ${chunk[j].name}`);
+        addLog('processing', `[${chunkStartIdx + j + 1}/${targetFiles.length}] OCR ${chunk[j].name}`);
       }
 
+      // Wrap setiap file dengan timeout
       const batchResults = await Promise.allSettled(
-        chunk.map(f => processSingleFile(f, detectDoc))
+        chunk.map(f => Promise.race([
+          processSingleFile(f, detectDoc),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error(`TIMEOUT: proses file >30 detik`)), TIMEOUT_MS)
+          )
+        ]))
       );
 
       // Proses hasil batch berurutan (agar log & progress urut)
@@ -142,19 +189,24 @@ export default function App() {
         const settled = batchResults[j];
 
         if (settled.status === 'rejected') {
-          errorList.push(`ERROR|${file.name}|${settled.reason?.message || 'Unknown error'}`);
-          addLog('error', `[${counter}/${files.length}] ${file.name}: ${settled.reason?.message || 'Unknown error'}`);
+          const errMsg = settled.reason?.message || 'Unknown error';
+          errorList.push(`ERROR|${file.name}|${errMsg}`);
+          erroredFiles.push(file);
+          addLog('error', `[${counter}/${targetFiles.length}] ${file.name}: ${errMsg}`);
+          globalIdx++;
+          setProgress({ current: globalIdx, total: targetFiles.length });
           continue;
         }
 
         const res = settled.value;
         globalIdx++;
-        setProgress({ current: globalIdx, total: files.length });
+        setProgress({ current: globalIdx, total: targetFiles.length });
 
         if (res.status === 'skip') { continue; }
         if (res.status === 'error' || res.status === 'exception') {
           errorList.push(`ERROR|${res.filename}|${res.error}`);
-          addLog('error', `[${counter}/${files.length}] ${res.filename}: ${res.error}`);
+          erroredFiles.push(file);
+          addLog('error', `[${counter}/${targetFiles.length}] ${res.filename}: ${res.error}`);
           continue;
         }
 
@@ -165,11 +217,12 @@ export default function App() {
         }
         if (!assets || !assets.length) {
           errorList.push(`ERROR|${filename}|Jenis dokumen tidak terdeteksi.`);
-          addLog('error', `[${counter}/${files.length}] ${filename}: tidak terdeteksi`);
+          erroredFiles.push(file);
+          addLog('error', `[${counter}/${targetFiles.length}] ${filename}: tidak terdeteksi`);
           continue;
         }
 
-        addLog('success', `[${counter}/${files.length}] ${filename} → ${kategori} (${assets.length} aset)`);
+        addLog('success', `[${counter}/${targetFiles.length}] ${filename} → ${kategori} (${assets.length} aset)`);
 
         for (const asset of assets) {
           const aid = asset.id || '';
@@ -193,6 +246,9 @@ export default function App() {
       setProgress({ current: 0, total: 0 });
       return;
     }
+
+    // Simpan daftar file error untuk fitur retry
+    setErrorFileNames(erroredFiles);
 
     // SO ER grouping
     const erGroups = {};
@@ -244,12 +300,29 @@ export default function App() {
       }
     }
 
-    setProgress({ current: files.length, total: files.length });
+    setProgress({ current: targetFiles.length, total: targetFiles.length });
     setResults(finalNames);
     setErrors(errorList);
-    addLog('info', `Selesai deteksi: ${finalNames.length} file siap disimpan.`);
+    if (erroredFiles.length > 0) {
+      addLog('info', `Selesai: ${finalNames.length} berhasil, ${erroredFiles.length} error (bisa di-retry).`);
+    } else {
+      addLog('info', `Selesai deteksi: ${finalNames.length} file siap disimpan.`);
+    }
     setProcessing(false);
+    setPaused(false);
+    pausedRef.current = false;
   }, [files, jenisKegiatan, instansi, addLog]);
+
+  // Simpan versi terbaru handleProcess ke ref setiap render
+  // Ini menghindari stale closure di handleRetryErrors
+  useEffect(() => { processRef.current = handleProcess; });
+
+  // Retry hanya file yang error — pakai processRef agar tidak stale
+  const handleRetryErrors = useCallback(() => {
+    if (!errorFileNames.length) return;
+    addLog('info', `Retry ${errorFileNames.length} file error...`);
+    processRef.current(errorFileNames);
+  }, [errorFileNames, addLog]);
 
   const handleCopyLogs = useCallback(() => {
     if (!logs.length) return;
@@ -324,7 +397,10 @@ export default function App() {
 
       <div className="main-content">
         {/* --------- LEFT PANEL --------- */}
-        <div className="left-panel">
+        <div className="left-panel"
+          onDragOver={e => { e.preventDefault(); }}
+          onDrop={e => { e.preventDefault(); handleDrop(e); }}
+        >
           <div className="card">
             <div className="card-title">Upload & Konfigurasi</div>
 
@@ -382,12 +458,6 @@ export default function App() {
                 ))}
               </div>
             )}
-
-            {processing && (
-              <div className="progress-bar-wrapper">
-                <div className="progress-bar-fill" style={{ width: `${(progress.current / progress.total) * 100}%` }} />
-              </div>
-            )}
           </div>
 
           {message && !processing && <div className={`message ${message.type}`}>{message.text}</div>}
@@ -396,13 +466,28 @@ export default function App() {
         {/* --------- RIGHT PANEL: ACTIONS + SPLIT (Hasil/Error | Log) --------- */}
         <div className="right-panel">
           <div className="card actions-card">
+            {processing && (
+              <div className="progress-bar-wrapper" style={{ marginBottom: '0.6rem' }}>
+                <div className="progress-bar-fill" style={{ width: `${(progress.current / progress.total) * 100}%` }} />
+              </div>
+            )}
             <div className="actions-row">
-              <button className="btn btn-primary" disabled={!files.length || processing} onClick={handleProcess}>
+              <button className="btn btn-primary" disabled={!files.length || processing} onClick={() => handleProcess()}>
                 {processing ? 'Memproses...' : 'Proses File'}
               </button>
+              {processing && !paused && (
+                <button className="btn btn-secondary" onClick={handlePause}>
+                  ⏸ Pause
+                </button>
+              )}
+              {processing && paused && (
+                <button className="btn btn-primary" onClick={handleResume}>
+                  ▶ Lanjutkan
+                </button>
+              )}
               {processing && (
                 <button className="btn btn-danger" onClick={handleCancel}>
-                  Batal
+                  ✕ Batal
                 </button>
               )}
               <button className="btn btn-secondary" onClick={handlePickDir}>
@@ -422,6 +507,11 @@ export default function App() {
                 <button className="btn btn-secondary" onClick={handleExportExcel}>
                   📊 Ekspor Excel
                 </button>
+                {!processing && errorFileNames.length > 0 && (
+                  <button className="btn btn-danger" onClick={handleRetryErrors}>
+                    🔄 Proses Ulang Error ({errorFileNames.length} file)
+                  </button>
+                )}
               </div>
             )}
           </div>

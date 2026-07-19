@@ -108,3 +108,30 @@ const mapped = subs.map(s => {
 - [[43_Temuan_dan_Rencana_Perbaikan_v2|Batch 2]]
 - [[44_Temuan_dan_Rencana_Perbaikan_v3|Batch 3]]
 - [[42_Riwayat_Pembaruan|Riwayat Pembaruan]]
+
+---
+
+## 📋 Rencana Next Update (Batch 6)
+
+### ✅ Drag & Drop di Seluruh Panel Kiri
+
+**Status**: ✅ Done (belum build)
+
+**Deskripsi**: Sebelumnya drag file PDF hanya bisa di kotak dropzone khusus. Sekarang seluruh area kiri (termasuk file list) bisa menerima drop.
+
+**Fix di** [[../web-app/src/App.jsx|App.jsx]] line 327:
+
+```jsx
+<div className="left-panel"
+  onDragOver={e => { e.preventDefault(); }}
+  onDrop={e => { e.preventDefault(); handleDrop(e); }}
+>
+```
+
+### ⏳ Progress Bar Pindah ke Atas Tombol
+
+**Status**: ⏳ Belum dikerjakan
+
+**Deskripsi**: Saat ini progress bar (`{processing && ...}`) muncul di bawah file list. Harus dipindah ke area di atas tombol "Proses File" agar lebih terlihat saat proses berjalan.
+
+**Rencana**: Pindahkan block progress bar JSX dari line 386-391 ke atas action buttons (sekitar line 398), di dalam card yang sama.
