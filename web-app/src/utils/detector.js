@@ -25,7 +25,8 @@ const TRAILING_LOC_NOISE = new Set(["AN","EEN","SIE","SIEH","SIH","SETE","S"]);
 const LOC_MAP = {
   "MASENG":"MSG","CICURUG":"CCR","CILEBUT":"CLT","BOGOR":"BOO",
   "BATUTULIS":"BTT","BOGORPALEDANG":"BOP","PALEDANG":"BOP",
-  "CIOMAS":"COS","CIGOMBONG":"CGB","BOJONGGEDE":"BJD","DEPOK":"BOO"
+  "CIOMAS":"COS","CIGOMBONG":"CGB","BOJONGGEDE":"BJD","DEPOK":"BOO",
+  "MMASENG":"MSG"
 };
 const LOC_CODES = new Set(["BOP","BTT","CLT","CGB","MSG","COS","BOO","CCR","BJD"]);
 const SHORT_CODES = new Set(["BOO","CLT","BTT","BOP","COS","MSG","CGB","CCR","BJD"]);
@@ -88,6 +89,8 @@ export function extractFuncloc(textCrop) {
       s = s.trim();
       if (NOISE_WORDS.has(s)) return null;
       if (LOC_MAP[s]) return LOC_MAP[s];
+      const std = getStandardLoc(s);
+      if (std) return std;
       return s;
     }).filter(Boolean);
     if (mapped.length) return mapped.join("-");
@@ -246,6 +249,47 @@ function extractRadioWaystationAssets(text) {
   return result;
 }
 
+function extractTableAssets(textCrop, prefixRegex, defaultLoc) {
+  const assets = [];
+  const lines = textCrop.split('\n');
+  const seen = new Set();
+  
+  for (const line of lines) {
+    const m = line.match(prefixRegex);
+    if (!m) continue;
+    
+    const rawDesc = m[1].replace(/\s*-\s*/g, "-").trim();
+    if (!rawDesc) continue;
+    
+    const words = rawDesc.split(/\s+/);
+    let loc = defaultLoc;
+    let id = rawDesc;
+    
+    if (words.length > 1) {
+      const lastWord = words[words.length - 1].toUpperCase();
+      if (SHORT_CODES.has(lastWord) || LOC_MAP[lastWord]) {
+        loc = LOC_MAP[lastWord] || lastWord;
+        id = words.slice(0, words.length - 1).join(" ");
+      } else {
+        const subWords = lastWord.split("-");
+        if (subWords.every(w => SHORT_CODES.has(w) || LOC_MAP[w])) {
+          loc = subWords.map(w => LOC_MAP[w] || w).join("-");
+          id = words.slice(0, words.length - 1).join(" ");
+        }
+      }
+    }
+    
+    id = id.replace(/\s+/g, ' ').trim();
+    
+    const key = `${id}|${loc}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      assets.push({ id, loc });
+    }
+  }
+  return assets;
+}
+
 // ======================= MAIN DETECT API =======================
 
 export function detectDoc(textFlat, textCrop, filenameUpper) {
@@ -304,7 +348,11 @@ export function detectDoc(textFlat, textCrop, filenameUpper) {
   else if (textFlat.includes("PERALATAN DALAM PERSINYALAN ELEKTRIK")) {
     kode = "BPBYE2"; kategori = "PDSE";
     const loc = extractFuncloc(textCrop) || getStandardLoc(textFlat);
-    assets.push({ id: "", loc });
+    const pdseRegex = /\b(?:INB|TRA)\d{5}\s*[:|]\s*(.*)/i;
+    assets = extractTableAssets(textCrop, pdseRegex, loc);
+    if (!assets.length) {
+      assets.push({ id: "", loc });
+    }
   }
 
   // PTPP
@@ -346,14 +394,19 @@ export function detectDoc(textFlat, textCrop, filenameUpper) {
     kode = "BPBKS17"; kategori = "PINTU PERLINTASAN";
     let textClean = textFlat.replace(/\bJPL\d+\b/g, "");
     assets = extractJplAssets(textClean, textFlat, true);
-    if (!assets.length) {
-      const fnMatch = filenameUpper.match(/JPL\s+([A-Z0-9]+)/);
-      if (fnMatch) {
-        assets = [{ id: `JPL ${fnMatch[1]}`, loc: getStandardLoc(filenameUpper) || "" }];
-      } else {
-        const loc = extractFuncloc(textCrop) || getStandardLoc(textFlat);
-        assets = [{ id: "", loc }];
-      }
+    
+    // Prefer JPL from filename
+    const fnMatch = filenameUpper.match(/JPL\s+(?:ELEKTRIK\s+)?([A-Z0-9]+)/);
+    if (fnMatch) {
+      const fnJpl = `JPL ${fnMatch[1]}`;
+      const fnLoc = getStandardLoc(filenameUpper) || getDualLoc(textFlat);
+      const ocrMatch = assets.find(a => a.id === fnJpl);
+      assets = ocrMatch ? [ocrMatch] : [{ id: fnJpl, loc: fnLoc || "" }];
+    } else if (assets.length) {
+      assets = [assets[0]];
+    } else {
+      const loc = extractFuncloc(textCrop) || getStandardLoc(textFlat);
+      assets = [{ id: "", loc }];
     }
   }
 
@@ -368,7 +421,11 @@ export function detectDoc(textFlat, textCrop, filenameUpper) {
   else if (textFlat.includes("TELEKOMUNIKASI DI LUAR STASIUN")) {
     kode = "BPBKS16"; kategori = "PTLS";
     const loc = getPtlsLoc(textFlat, textCrop);
-    assets.push({ id: "", loc });
+    const ptlsRegex = /\b(?:TLK|TWR)\d{5}\s*[:|]\s*(.*)/i;
+    assets = extractTableAssets(textCrop, ptlsRegex, loc);
+    if (!assets.length) {
+      assets.push({ id: "", loc });
+    }
   }
 
   // RADIO BASESTATION
@@ -402,29 +459,35 @@ export function detectDoc(textFlat, textCrop, filenameUpper) {
   // AXLE COUNTER
   else if (textFlat.includes("PERAWATAN AXLE COUNTER")) {
     kode = "BPBYE7"; kategori = "AXLE COUNTER";
-    const zpRx = /\bZP\s?(\d{1,3})([A-Z]{1,2})?\b(?!\.\d)/g;
+    const seen = new Set();
+    const loc = extractFuncloc(textCrop) || getDualLoc(textFlat);
+
+    // === STRATEGI 1: parse baris AXL / AXLE COUNTER ===
+    const axlRx = /(?:AXL\d+|AXLE\s+COUNTER)\s+ZP\s*([0-9]{1,2}[A-Z]*)/gi;
     let m;
-    const zpMatches = [];
-    while ((m = zpRx.exec(textFlat)) !== null) {
-      if (m[1] === "43" && !m[2]) continue;
-      zpMatches.push({ id: `ZP ${m[1]}${m[2] || ""}`, pos: m.index });
+    while ((m = axlRx.exec(textFlat)) !== null) {
+      const zId = `ZP ${m[1].trim()}`;
+      if (!seen.has(zId)) { seen.add(zId); assets.push({ id: zId, loc }); }
     }
-    if (zpMatches.length) {
-      const seen = new Set();
-      for (const { id: zId, pos } of zpMatches) {
-        if (seen.has(zId)) continue;
-        seen.add(zId);
-        let zpLoc = null;
-        for (const line of textCrop.split("\n")) {
-          if (line.includes(zId) && !line.toUpperCase().includes("PERAWATAN")) {
-            zpLoc = getDualLoc(line); break;
+
+    // === STRATEGI 2: fallback dari tabel "Nomor ZP sesuai lokasi 10B 20B..." ===
+    if (!assets.length) {
+      const nomorZpRx = /Nomor ZP\s*(?:sesuai\s+lokasi)?\s+((?:(?:ZP)?[0-9]{1,2}[A-Z]*\s*)+)/i;
+      const nzm = nomorZpRx.exec(textFlat);
+      if (nzm) {
+        const zpTokens = nzm[1].match(/(?:ZP)?[0-9]{1,2}[A-Z]*/gi) || [];
+        for (const tok of zpTokens) {
+          const cleanVal = tok.replace(/ZP/i, "").trim();
+          if (cleanVal) {
+            const zId = `ZP ${cleanVal}`;
+            if (!seen.has(zId)) { seen.add(zId); assets.push({ id: zId, loc }); }
           }
         }
-        const loc = zpLoc || extractFuncloc(textCrop) || getDualLoc(textFlat);
-        assets.push({ id: zId, loc });
       }
-    } else {
-      const loc = extractFuncloc(textCrop) || getDualLoc(textFlat);
+    }
+    
+    // === STRATEGI 3: fallback standard ===
+    if (!assets.length) {
       assets.push({ id: "ZP", loc });
     }
   }
@@ -465,8 +528,12 @@ export function detectDoc(textFlat, textCrop, filenameUpper) {
     if (combinedCda.includes("ER RADIO")) { kode = "BPBYE14"; kategori = "CATU DAYA ER RADIO"; }
     else if (combinedCda.includes("ER SINYAL")) { kode = "BPBYE14"; kategori = "CATU DAYA ER SINYAL"; }
     else { kode = "BPBYE14"; kategori = "CATU DAYA"; }
-    const loc = extractFuncloc(textCrop) || getDualLoc(textFlat);
-    assets.push({ id: "", loc });
+    const loc = extractFuncloc(textCrop) || getStandardLoc(textFlat);
+    const cdaRegex = /\bCDA\d{5}\s*[:|]\s*(.*)/i;
+    assets = extractTableAssets(textCrop, cdaRegex, loc);
+    if (!assets.length) {
+      assets.push({ id: "", loc });
+    }
   }
 
   // SERAT OPTIK ER
