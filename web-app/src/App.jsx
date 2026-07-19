@@ -116,7 +116,8 @@ export default function App() {
 
   // handleProcess: opsional terima fileList untuk retry-error-only
   const handleProcess = useCallback(async (fileList) => {
-    const targetFiles = Array.isArray(fileList) ? fileList : files;
+    const isRetry = Array.isArray(fileList);
+    const targetFiles = isRetry ? fileList : files;
     if (!targetFiles.length) return;
 
     cancelledRef.current = false;
@@ -126,7 +127,10 @@ export default function App() {
     setProcessing(true);
     setLogs([]);
     setProgress({ current: 0, total: targetFiles.length });
-    setMessage(null); setResults([]); setErrors([]);
+    setMessage(null);
+    // Saat retry: JANGAN reset results — snapshot dulu untuk di-merge nanti
+    // Saat proses normal: reset semua
+    if (!isRetry) { setResults([]); setErrors([]); }
 
     const TIMEOUT_MS = 30000; // 30 detik per file
     addLog('info', `Mulai proses ${targetFiles.length} file...`);
@@ -301,13 +305,31 @@ export default function App() {
     }
 
     setProgress({ current: targetFiles.length, total: targetFiles.length });
-    setResults(finalNames);
-    setErrors(errorList);
-    if (erroredFiles.length > 0) {
-      addLog('info', `Selesai: ${finalNames.length} berhasil, ${erroredFiles.length} error (bisa di-retry).`);
+
+    if (isRetry) {
+      // Merge hasil retry dengan hasil lama — dedup by name
+      setResults(prev => {
+        const existingNames = new Set(prev.map(r => r.name));
+        const newUnique = finalNames.filter(r => !existingNames.has(r.name));
+        return [...prev, ...newUnique];
+      });
+      // Ganti errors lama dengan errors dari retry (file yg masih gagal)
+      setErrors(errorList);
+      if (erroredFiles.length > 0) {
+        addLog('info', `Retry selesai: ${finalNames.length} berhasil, ${erroredFiles.length} masih error.`);
+      } else {
+        addLog('info', `Retry selesai: semua file berhasil diproses.`);
+      }
     } else {
-      addLog('info', `Selesai deteksi: ${finalNames.length} file siap disimpan.`);
+      setResults(finalNames);
+      setErrors(errorList);
+      if (erroredFiles.length > 0) {
+        addLog('info', `Selesai: ${finalNames.length} berhasil, ${erroredFiles.length} error (bisa di-retry).`);
+      } else {
+        addLog('info', `Selesai deteksi: ${finalNames.length} file siap disimpan.`);
+      }
     }
+
     setProcessing(false);
     setPaused(false);
     pausedRef.current = false;

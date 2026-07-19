@@ -128,10 +128,29 @@ const mapped = subs.map(s => {
 >
 ```
 
-### ⏳ Progress Bar Pindah ke Atas Tombol
+### ✅ Progress Bar Pindah ke Atas Tombol
 
-**Status**: ⏳ Belum dikerjakan
+**Status**: ✅ Done (sudah di-build Batch 6)
 
-**Deskripsi**: Saat ini progress bar (`{processing && ...}`) muncul di bawah file list. Harus dipindah ke area di atas tombol "Proses File" agar lebih terlihat saat proses berjalan.
+---
 
-**Rencana**: Pindahkan block progress bar JSX dari line 386-391 ke atas action buttons (sekitar line 398), di dalam card yang sama.
+## 🐛 Bug Tracker — Batch 6 (Belum Difix)
+
+### ❌ BUG: Retry Error Menghapus Hasil Sebelumnya
+
+**Status**: ✅ Fixed — 2026-07-19
+
+**Ditemukan**: 2026-07-19
+
+**Deskripsi**: Saat tombol "🔄 Proses Ulang Error (N file)" diklik, hasil file yang sebelumnya **sudah berhasil diproses** menjadi hilang. Tombol "Simpan" tidak bisa digunakan lagi.
+
+**Root Cause**: Di `handleProcess`, saat dipanggil dengan `fileList` (mode retry), baris ini tetap dieksekusi:
+```js
+setMessage(null); setResults([]); setErrors([]);
+```
+Ini menghapus `results` dari proses sebelumnya. Seharusnya saat retry, hasil lama di-**merge** dengan hasil baru, bukan di-reset.
+
+**Rencana Fix**: 
+- Tambah parameter mode (`isRetry`) ke `handleProcess`
+- Jika `isRetry === true`, skip `setResults([])` di awal, dan **merge** `finalNames` baru ke `results` lama di akhir dengan dedup nama
+- Atau: simpan snapshot `results` sebelum retry, restore + merge setelah selesai
