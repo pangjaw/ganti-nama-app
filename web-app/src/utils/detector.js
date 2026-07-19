@@ -453,7 +453,11 @@ export function detectDoc(textFlat, textCrop, filenameUpper) {
   else if (textFlat.includes("CTC") && textFlat.includes("CTS")) {
     kode = "BPBYE4"; kategori = "CTC-CTS";
     const loc = extractFuncloc(textCrop) || getStandardLoc(textFlat);
-    assets.push({ id: "", loc });
+    const ctcRegex = /\b(?:INB|TRA)\d{5}\s*[:|]\s*(.*)/i;
+    assets = extractTableAssets(textCrop, ctcRegex, loc);
+    if (!assets.length) {
+      assets.push({ id: "", loc });
+    }
   }
 
   // AXLE COUNTER
