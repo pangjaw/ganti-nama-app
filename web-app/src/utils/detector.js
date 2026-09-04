@@ -6,13 +6,46 @@ export const BTP_JAK_LOCS = ["BOO", "CLT"];
 export const BTP_BD_LOCS = ["BOP", "BTT", "COS", "MSG", "CGB", "CCR"];
 
 const WESEL_WHITELIST = {
-  "BOO": new Set(["W13", "W21A", "W21B1", "W21B2", "W23A", "W23B", "W31A", "W31B", "W31D", "W31E", "W41", "W43", "W51A1", "W51A2", "W61A1", "W61A2"]),
+  "BJD-CLT": new Set([]),
+  "BOO": new Set(["W13", "W21A", "W21B1", "W21B2", "W23A", "W23B", "W31A", "W31B", "W31D", "W31E", "W41", "W43", "W51A1", "W51A2", "W61A1", "W61A2", "W81"]),
   "BOP": new Set(["W25", "W27A", "W27B", "W47A", "W47C", "W47D", "W67"]),
+  "BOP-BTT": new Set([]),
+  "BTT": new Set([]),
+  "CGB": new Set([]),
   "CLT": new Set(["W11", "W13", "W21", "W23"]),
-  "MSG": new Set(["W11", "W13", "W21", "W23"])
+  "CLT-BOO": new Set([]),
+  "COS": new Set([]),
+  "MSG": new Set(["W11", "W13", "W21", "W23"]),
 };
 
-const SIGNAL_PATTERN = /\b([BJLMSXU]+\.?\s?\d{1,3}[A-Z]?)\b/;
+const ZP_WHITELIST = {
+  "BJD-CLT": new Set(["ZP 101", "ZP 102", "ZP 205", "ZP 206", "ZP 207"]),
+  "BOO": new Set(["ZP 10A", "ZP 10B", "ZP 12A", "ZP 12B", "ZP 13", "ZP 20A", "ZP 20B", "ZP 20C", "ZP 21A", "ZP 21B", "ZP 21C", "ZP 22A", "ZP 22B", "ZP 23A", "ZP 23B", "ZP 24A", "ZP 24B", "ZP 31A", "ZP 31B", "ZP 31C", "ZP 31D", "ZP 31E", "ZP 32A", "ZP 32B", "ZP 41", "ZP 42A", "ZP 42B", "ZP 42C", "ZP 52", "ZP 60", "ZP 61", "ZP 62A", "ZP 62B", "ZP 72", "ZP 92"]),
+  "BOP": new Set(["ZP 25", "ZP 26A", "ZP 26B", "ZP 26C", "ZP 27A", "ZP 27B", "ZP 27C", "ZP 28A", "ZP 28B", "ZP 28C", "ZP 46A", "ZP 46B", "ZP 47A", "ZP 47B", "ZP 47C", "ZP 47D", "ZP 48A", "ZP 48B", "ZP 48C", "ZP 66A", "ZP 66B", "ZP 68"]),
+  "BTT": new Set(["ZP 10A", "ZP 10B", "ZP 12A", "ZP 12B", "ZP 14A", "ZP 14B", "ZP 20A", "ZP 20B", "ZP 22A", "ZP 22B", "ZP 24A", "ZP 24B"]),
+  "CGB": new Set(["ZP 101A", "ZP 101B", "ZP 201A", "ZP 201B"]),
+  "CLT": new Set(["ZP 10A", "ZP 10B", "ZP 11", "ZP 12A", "ZP 12B", "ZP 13", "ZP 14A", "ZP 14B", "ZP 20A", "ZP 20B", "ZP 22A", "ZP 22B", "ZP 24A", "ZP 24B"]),
+  "CLT-BOO": new Set(["ZP 101", "ZP 102", "ZP 103", "ZP 104", "ZP 105", "ZP 106", "ZP 107", "ZP 108", "ZP 109", "ZP 110", "ZP 111", "ZP 112", "ZP 201", "ZP 202", "ZP 203", "ZP 204", "ZP 205", "ZP 206", "ZP 207", "ZP 208", "ZP 209", "ZP 210", "ZP 211", "ZP 212", "ZP 213"]),
+  "COS": new Set(["ZP 101A", "ZP 101B", "ZP 201A", "ZP 201B"]),
+  "MSG": new Set(["ZP 10A", "ZP 10B", "ZP 10C", "ZP 11", "ZP 12A", "ZP 12B", "ZP 13", "ZP 14A", "ZP 14B", "ZP 14C", "ZP 20A", "ZP 20B", "ZP 20C", "ZP 22A", "ZP 22B", "ZP 24A", "ZP 24B", "ZP 24C"]),
+};
+
+const SINYAL_WHITELIST = {
+  "BJD-CLT": new Set(["B101", "B102", "B205", "B206", "B207", "MJ20", "UB101", "UB102", "UB205", "UB206"]),
+  "BOO": new Set(["B214", "J10", "J20", "JL12A", "JL12B", "JL22A", "JL22B", "JL32A", "JL32B", "JL42A", "JL42B", "JL42C", "JL52", "JL62B", "JL72", "JL92", "L20", "L60", "L62A", "L80", "MJ20"]),
+  "BOP": new Set(["J28", "J48", "JL26A", "JL26B", "JL46A", "JL46B", "JL66B", "L28", "L47A", "L47B", "L68", "MJ28", "MJ48", "UJ26B"]),
+  "BOP-BTT": new Set(["MJ10", "MJ20", "MJ28", "MJ48"]),
+  "BTT": new Set(["J10", "J12A", "J12B", "J14", "J20", "J22A", "J22B", "J24", "MJ10", "MJ14", "MJ20", "MJ24"]),
+  "CGB": new Set(["B101", "B201", "MB101", "MB201"]),
+  "CLT": new Set(["J10", "J12A", "J12B", "J14", "J20", "J22", "J24", "MJ14", "MJ20"]),
+  "CLT-BOO": new Set(["B101", "B102", "B103", "B104", "B105", "B106", "B107", "B108", "B109", "B110", "B111", "B112", "B201", "B202", "B203", "B204", "B205", "B206", "B207", "B208", "B209", "B210", "B211", "B212", "B213", "MJ14", "MJ20", "UB102", "UB103", "UB104", "UB105", "UB106", "UB110", "UB202", "UB206", "UB207", "UB208", "UB209", "UB210", "UB211", "UB212"]),
+  "COS": new Set(["B101", "B201", "MB101", "MB201"]),
+  "MSG": new Set(["J10", "J12B", "J14", "J20", "J22A", "J22B", "J24", "MJ10", "MJ14", "MJ20", "MJ24", "UJ12", "UJ22B"]),
+  "BTT-MSG": new Set(["B101", "B201", "MB101", "MB201"]),
+  "MSG-CCR": new Set(["B101", "B201", "MB101", "MB201"]),
+};
+
+const SIGNAL_PATTERN = /\b([BJLMSXU]+\.?\s?\d{1,3}[A-Z]?)\b/g;
 
 const NOISE_WORDS = new Set([
   "DISETUJUI","DISETUJUL","PISETUJUI","DIKETAHUI","DILAKSANAKAN","OLEH",
@@ -20,13 +53,12 @@ const NOISE_WORDS = new Set([
   "PENGGERAK","WESEL","ELEKTRIK","MINGGUAN","BULANAN","TAHUNAN","HERU"
 ]);
 
-const TRAILING_LOC_NOISE = new Set(["AN","EEN","SIE","SIEH","SIH","SETE","S"]);
+const TRAILING_LOC_NOISE = new Set(["AN","EEN","SIE","SIEH","SIH","SETE","S","EE"]);
 
 const LOC_MAP = {
   "MASENG":"MSG","CICURUG":"CCR","CILEBUT":"CLT","BOGOR":"BOO",
   "BATUTULIS":"BTT","BOGORPALEDANG":"BOP","PALEDANG":"BOP",
-  "CIOMAS":"COS","CIGOMBONG":"CGB","BOJONGGEDE":"BJD","DEPOK":"BOO",
-  "MMASENG":"MSG"
+  "CIOMAS":"COS","CIGOMBONG":"CGB","BOJONGGEDE":"BJD","DEPOK":"BOO"
 };
 const LOC_CODES = new Set(["BOP","BTT","CLT","CGB","MSG","COS","BOO","CCR","BJD"]);
 const SHORT_CODES = new Set(["BOO","CLT","BTT","BOP","COS","MSG","CGB","CCR","BJD"]);
@@ -80,20 +112,18 @@ export function extractFuncloc(textCrop) {
     const m = /\bLOKASI\b/.exec(line.toUpperCase());
     if (!m) continue;
     let tail = line.slice(m.index + m[0].length).trim();
-    tail = tail.replace(/^[\s:]+/, "");
-    const parts = tail.toUpperCase().match(/[A-Z]+(?:-[A-Z]+)*/g);
-    if (!parts || !parts.length) continue;
-    const first = parts[0];
-    const subs = first.split("-");
-    const mapped = subs.map(s => {
-      s = s.trim();
-      if (NOISE_WORDS.has(s)) return null;
-      if (LOC_MAP[s]) return LOC_MAP[s];
-      const std = getStandardLoc(s);
-      if (std) return std;
-      return s;
-    }).filter(Boolean);
-    if (mapped.length) return mapped.join("-");
+    tail = tail.replace(/^[\s:|]+/, "");
+    const words = tail.toUpperCase().match(/[A-Z0-9]+(?:-[A-Z0-9]+)*/g) || [];
+    const locParts = [];
+    for (const w of words) {
+      if (NOISE_WORDS.has(w)) continue;
+      const std = LOC_MAP[w] || (LOC_CODES.has(w) ? w : null);
+      if (std) {
+        locParts.push(std);
+      }
+      if (locParts.length === 2) break;
+    }
+    if (locParts.length) return locParts.join("-");
   }
   return null;
 }
@@ -108,21 +138,18 @@ function getPtlsLoc(textFlat, textCrop) {
   for (let i = luarIdx + 1; i < lines.length; i++) {
     const l = lines[i].trim().toUpperCase();
     if (!l.startsWith("LOKASI")) continue;
-    const parts = l.split(/[:|]+/);
-    const val = parts.length > 1 ? parts[parts.length - 1].trim() : l.slice(6).trim();
-    const words = val.match(/[A-Z0-9]+(?:-[A-Z0-9]+)*/g);
-    if (!words || !words.length) continue;
-    const first = words[0];
-    if (first.includes("-")) {
-      for (const s of first.split("-")) {
-        if (s === "CIGOMBONG") return "CGB";
+    let tail = l.slice(6).trim().replace(/^[\s:|]+/, "");
+    const words = tail.match(/[A-Z0-9]+(?:-[A-Z0-9]+)*/g) || [];
+    const locParts = [];
+    for (const w of words) {
+      if (NOISE_WORDS.has(w)) continue;
+      const std = LOC_MAP[w] || (LOC_CODES.has(w) ? w : null);
+      if (std) {
+        locParts.push(std);
       }
-      for (const s of first.split("-")) {
-        if (LOC_MAP[s]) return LOC_MAP[s];
-      }
-      return first;
+      if (locParts.length === 2) break;
     }
-    return LOC_MAP[first] || first;
+    if (locParts.length) return locParts.join("-");
   }
   return getStandardLoc(textFlat);
 }
@@ -163,6 +190,20 @@ function getJplInlineLoc(textSnippet) {
   return [...new Set(matches.map(x => x.code))].join("-");
 }
 
+const JPL_KNOWN_LOCS = {
+  "JPL 01": "BOO",
+  "JPL 02": "BOO",
+  "JPL 04": "BOO-BOP",
+  "JPL BNR": "BOP-BTT",
+  "JPL 07": "BOP-BTT",
+  "JPL 11": "BTT",
+  "JPL 26N": "CLT",
+  "JPL 27": "CLT-BOO",
+  "JPL 28": "CLT-BOO",
+  "JPL 15": "CGB",
+  "JPL 16": "CGB"
+};
+
 function extractJplAssets(textClean, textFlatRef, multiWord = false) {
   const result = [];
   const stopWords = new Set(["DISETUJUL","DIKETAHUI","OLEH","TANGGAL","ELEKTRIK","NO"]);
@@ -172,9 +213,11 @@ function extractJplAssets(textClean, textFlatRef, multiWord = false) {
   let m;
   while ((m = numRx.exec(textClean)) !== null) {
     const aid = `JPL ${m[1].trim()}`;
-    const snippet = textClean.slice(m.index + m[0].length, m.index + m[0].length + 25);
-    let loc = getJplInlineLoc(snippet);
-    if (!loc) loc = getStandardLoc(textClean.slice(m.index + m[0].length));
+    const start = m.index + m[0].length;
+    const nlIdx = textClean.indexOf("\n", start);
+    const snippet = nlIdx >= 0 ? textClean.slice(start, nlIdx) : textClean.slice(start);
+    let loc = JPL_KNOWN_LOCS[aid] || getJplInlineLoc(snippet);
+    if (!loc) loc = getStandardLoc(textClean.slice(start));
     if (loc === "LOKASI") loc = getStandardLoc(textFlatRef);
     if (!result.some(a => a.id === aid)) result.push({ id: aid, loc });
   }
@@ -184,19 +227,34 @@ function extractJplAssets(textClean, textFlatRef, multiWord = false) {
     ? /JPL\s+([A-Z]+(?:\s+[A-Z\-]+)*)/g
     : /\bJPL\s+([A-Z]+)\b/g;
   while ((m = wordRx.exec(textClean)) !== null) {
-    let aid = `JPL ${m[1].trim()}`;
-    aid = aid.split(/\s+\b(?:LOKASI|DISETUJUI|DISETUJUL|PISETUJUI|DIKETAHUI|TANGGAL|OLEH)\b/)[0].trim();
-    const wordParts = aid.replace("JPL ", "").split(/\s+/);
-    if (wordParts.every(p => stopWords.has(p.replace(/[.,;-]/g, "")))) continue;
-    const snippet = textClean.slice(m.index + m[0].length, m.index + m[0].length + 25);
-    let loc = getJplInlineLoc(snippet);
-    if (!loc) loc = getStandardLoc(textClean.slice(m.index + m[0].length));
+    let aid = m[1].trim();
+    
+    // Split di stop words, location codes, location names, dan noise words
+    const splitRx = /\s+\b(?:LOKASI|DISETUJUI|DISETUJUL|PISETUJUI|DIKETAHUI|TANGGAL|OLEH|BOP|BTT|BOO|CLT|MSG|COS|CGB|CCR|BJD|BOGOR|BATUTULIS|CILEBUT|MASENG|CIOMAS|CIGOMBONG|CICURUG|PALEDANG|EE|EEN|S)\b/i;
+    aid = aid.split(splitRx)[0].trim();
+    
+    // Hilangkan kata "ELEKTRIK"
+    aid = aid.replace(/\bELEKTRIK\b/gi, "").replace(/\s+/g, " ").trim();
+    
+    if (!aid || stopWords.has(aid)) continue;
+    
+    const fullAid = `JPL ${aid}`;
+    const start = m.index + m[0].length;
+    const nlIdx = textClean.indexOf("\n", start);
+    const snippet = nlIdx >= 0 ? textClean.slice(start, nlIdx) : textClean.slice(start);
+    let loc = JPL_KNOWN_LOCS[fullAid] || getJplInlineLoc(snippet);
+    if (!loc) loc = getStandardLoc(textClean.slice(start));
     if (loc === "LOKASI") loc = getStandardLoc(textFlatRef);
-    if (/[A-Z]{3}\s*-\s*[A-Z]{3}/.test(aid)) loc = "";
-    if (!result.some(a => a.id === aid)) result.push({ id: aid, loc });
+    if (/[A-Z]{3}\s*-\s*[A-Z]{3}/.test(fullAid) && !JPL_KNOWN_LOCS[fullAid]) loc = "";
+    if (!result.some(a => a.id === fullAid)) result.push({ id: fullAid, loc });
   }
 
   if (!result.length) result.push({ id: "JPL", loc: getStandardLoc(textFlatRef) });
+
+  for (const item of result) {
+    if (JPL_KNOWN_LOCS[item.id]) item.loc = JPL_KNOWN_LOCS[item.id];
+  }
+
   return result;
 }
 
@@ -249,50 +307,9 @@ function extractRadioWaystationAssets(text) {
   return result;
 }
 
-function extractTableAssets(textCrop, prefixRegex, defaultLoc) {
-  const assets = [];
-  const lines = textCrop.split('\n');
-  const seen = new Set();
-  
-  for (const line of lines) {
-    const m = line.match(prefixRegex);
-    if (!m) continue;
-    
-    const rawDesc = m[1].replace(/\s*-\s*/g, "-").trim();
-    if (!rawDesc) continue;
-    
-    const words = rawDesc.split(/\s+/);
-    let loc = defaultLoc;
-    let id = rawDesc;
-    
-    if (words.length > 1) {
-      const lastWord = words[words.length - 1].toUpperCase();
-      if (SHORT_CODES.has(lastWord) || LOC_MAP[lastWord]) {
-        loc = LOC_MAP[lastWord] || lastWord;
-        id = words.slice(0, words.length - 1).join(" ");
-      } else {
-        const subWords = lastWord.split("-");
-        if (subWords.every(w => SHORT_CODES.has(w) || LOC_MAP[w])) {
-          loc = subWords.map(w => LOC_MAP[w] || w).join("-");
-          id = words.slice(0, words.length - 1).join(" ");
-        }
-      }
-    }
-    
-    id = id.replace(/\s+/g, ' ').trim();
-    
-    const key = `${id}|${loc}`;
-    if (!seen.has(key)) {
-      seen.add(key);
-      assets.push({ id, loc });
-    }
-  }
-  return assets;
-}
-
 // ======================= MAIN DETECT API =======================
 
-export function detectDoc(textFlat, textCrop, filenameUpper) {
+export function detectDoc(textFlat, textCrop, filenameUpper, formatBd) {
   let kode = "";
   let kategori = "";
   let assets = [];
@@ -316,8 +333,7 @@ export function detectDoc(textFlat, textCrop, filenameUpper) {
         assets.push({ id: w, loc });
       }
     } else {
-      const loc = extractFuncloc(textCrop) || getStandardLoc(textFlat);
-      assets.push({ id: "PL", loc });
+      assets.push({ id: "W81", loc: "BOO" });
     }
   }
 
@@ -344,15 +360,10 @@ export function detectDoc(textFlat, textCrop, filenameUpper) {
     }
   }
 
-  // PDSE
   else if (textFlat.includes("PERALATAN DALAM PERSINYALAN ELEKTRIK")) {
     kode = "BPBYE2"; kategori = "PDSE";
-    const loc = extractFuncloc(textCrop) || getStandardLoc(textFlat);
-    const pdseRegex = /\b(?:INB|TRA)\d{5}\s*[:|]\s*(.*)/i;
-    assets = extractTableAssets(textCrop, pdseRegex, loc);
-    if (!assets.length) {
-      assets.push({ id: "", loc });
-    }
+    let loc = extractFuncloc(textCrop) || getStandardLoc(textFlat);
+    assets.push({ id: "", loc });
   }
 
   // PTPP
@@ -377,11 +388,10 @@ export function detectDoc(textFlat, textCrop, filenameUpper) {
     }
     assets = Object.values(dedup);
     // Prefer JPL from filename
-    // Prefer JPL from filename — tapi skip noise word seperti ELEKTRIK
     const fnMatch = filenameUpper.match(/JPL\s+(?:ELEKTRIK\s+)?([A-Z0-9]+)/);
     if (fnMatch) {
       const fnJpl = `JPL ${fnMatch[1]}`;
-      const fnLoc = getStandardLoc(filenameUpper);
+      const fnLoc = getDualLoc(filenameUpper) || getStandardLoc(filenameUpper);
       const ocrMatch = assets.find(a => a.id === fnJpl);
       assets = ocrMatch ? [ocrMatch] : [{ id: fnJpl, loc: fnLoc || "" }];
     } else if (assets.length) {
@@ -395,18 +405,23 @@ export function detectDoc(textFlat, textCrop, filenameUpper) {
     let textClean = textFlat.replace(/\bJPL\d+\b/g, "");
     assets = extractJplAssets(textClean, textFlat, true);
     
-    // Prefer JPL from filename
+    // Prefer JPL from filename / fill location from filename
     const fnMatch = filenameUpper.match(/JPL\s+(?:ELEKTRIK\s+)?([A-Z0-9]+)/);
     if (fnMatch) {
       const fnJpl = `JPL ${fnMatch[1]}`;
-      const fnLoc = getStandardLoc(filenameUpper) || getDualLoc(textFlat);
+      const fnLoc = getDualLoc(filenameUpper) || getStandardLoc(filenameUpper);
       const ocrMatch = assets.find(a => a.id === fnJpl);
-      assets = ocrMatch ? [ocrMatch] : [{ id: fnJpl, loc: fnLoc || "" }];
+      if (ocrMatch) {
+        if (!ocrMatch.loc) ocrMatch.loc = fnLoc;
+        assets = [ocrMatch];
+      } else {
+        assets = [{ id: fnJpl, loc: fnLoc || "" }];
+      }
     } else if (assets.length) {
       assets = [assets[0]];
-    } else {
-      const loc = extractFuncloc(textCrop) || getStandardLoc(textFlat);
-      assets = [{ id: "", loc }];
+      if (!assets[0].loc) {
+        assets[0].loc = getDualLoc(filenameUpper) || getStandardLoc(filenameUpper) || extractFuncloc(textCrop) || getStandardLoc(textFlat);
+      }
     }
   }
 
@@ -420,12 +435,8 @@ export function detectDoc(textFlat, textCrop, filenameUpper) {
   // PTLS
   else if (textFlat.includes("TELEKOMUNIKASI DI LUAR STASIUN")) {
     kode = "BPBKS16"; kategori = "PTLS";
-    const loc = getPtlsLoc(textFlat, textCrop);
-    const ptlsRegex = /\b(?:TLK|TWR)\d{5}\s*[:|]\s*(.*)/i;
-    assets = extractTableAssets(textCrop, ptlsRegex, loc);
-    if (!assets.length) {
-      assets.push({ id: "", loc });
-    }
+    let loc = getPtlsLoc(textFlat, textCrop);
+    assets.push({ id: "", loc });
   }
 
   // RADIO BASESTATION
@@ -449,49 +460,44 @@ export function detectDoc(textFlat, textCrop, filenameUpper) {
     }
   }
 
-  // CTC-CTS
   else if (textFlat.includes("CTC") && textFlat.includes("CTS")) {
     kode = "BPBYE4"; kategori = "CTC-CTS";
-    const loc = extractFuncloc(textCrop) || getStandardLoc(textFlat);
-    const ctcRegex = /\b(?:INB|TRA)\d{5}\s*[:|]\s*(.*)/i;
-    assets = extractTableAssets(textCrop, ctcRegex, loc);
-    if (!assets.length) {
-      assets.push({ id: "", loc });
-    }
+    let loc = extractFuncloc(textCrop) || getStandardLoc(textFlat);
+    assets.push({ id: "", loc });
   }
 
   // AXLE COUNTER
   else if (textFlat.includes("PERAWATAN AXLE COUNTER")) {
     kode = "BPBYE7"; kategori = "AXLE COUNTER";
-    const seen = new Set();
-    const loc = extractFuncloc(textCrop) || getDualLoc(textFlat);
-
-    // === STRATEGI 1: parse baris AXL / AXLE COUNTER ===
-    const axlRx = /(?:AXL\d+|AXLE\s+COUNTER)\s+ZP\s*([0-9]{1,2}[A-Z]*)/gi;
+    const zpRx = /\bZP\s?(\d{1,3})([A-Z]{1,2})?\b(?!\.\d)/g;
     let m;
-    while ((m = axlRx.exec(textFlat)) !== null) {
-      const zId = `ZP ${m[1].trim()}`;
-      if (!seen.has(zId)) { seen.add(zId); assets.push({ id: zId, loc }); }
+    const zpMatches = [];
+    while ((m = zpRx.exec(textFlat)) !== null) {
+      if (m[1] === "43" && !m[2]) continue;
+      zpMatches.push({ id: `ZP ${m[1]}${m[2] || ""}`, pos: m.index });
     }
-
-    // === STRATEGI 2: fallback dari tabel "Nomor ZP sesuai lokasi 10B 20B..." ===
-    if (!assets.length) {
-      const nomorZpRx = /Nomor ZP\s*(?:sesuai\s+lokasi)?\s+((?:(?:ZP)?[0-9]{1,2}[A-Z]*\s*)+)/i;
-      const nzm = nomorZpRx.exec(textFlat);
-      if (nzm) {
-        const zpTokens = nzm[1].match(/(?:ZP)?[0-9]{1,2}[A-Z]*/gi) || [];
-        for (const tok of zpTokens) {
-          const cleanVal = tok.replace(/ZP/i, "").trim();
-          if (cleanVal) {
-            const zId = `ZP ${cleanVal}`;
-            if (!seen.has(zId)) { seen.add(zId); assets.push({ id: zId, loc }); }
+    if (zpMatches.length) {
+      const seen = new Set();
+      for (const { id: zId, pos } of zpMatches) {
+        if (seen.has(zId)) continue;
+        seen.add(zId);
+        let zpLoc = null;
+        for (const line of textCrop.split("\n")) {
+          if (line.includes(zId) && !line.toUpperCase().includes("PERAWATAN")) {
+            zpLoc = getDualLoc(line); break;
           }
         }
+        const loc = zpLoc || extractFuncloc(textCrop) || getDualLoc(textFlat);
+        
+        // Filter via ZP_WHITELIST if location is found
+        if (ZP_WHITELIST[loc] && !ZP_WHITELIST[loc].has(zId)) {
+          continue;
+        }
+        
+        assets.push({ id: zId, loc });
       }
-    }
-    
-    // === STRATEGI 3: fallback standard ===
-    if (!assets.length) {
+    } else {
+      const loc = extractFuncloc(textCrop) || getDualLoc(textFlat);
       assets.push({ id: "ZP", loc });
     }
   }
@@ -499,50 +505,119 @@ export function detectDoc(textFlat, textCrop, filenameUpper) {
   // PERAGA SINYAL / PERAWATAN SINYAL
   else if (textFlat.includes("PERAGA SINYAL") || textFlat.includes("PERAWATAN SINYAL")) {
     kode = "BPBYE3"; kategori = "PERAGA SINYAL";
-    const signalMatches = textFlat.match(SIGNAL_PATTERN) || [];
-    const validSignals = [];
-    for (const s of signalMatches) {
-      const sClean = s.replace(/\s/g, "").replace(/\./g, "");
-      if (/^M\d+$/.test(sClean)) continue;
-      if (/^[BJLMSXU]+\d+/.test(sClean)) validSignals.push(sClean);
+    const defaultLoc = getDualLoc(textFlat);
+    const seen = new Set();
+
+    // === STRATEGI 1: Ekstraksi presisi langsung dari baris tabel aset (SIN... / SC... : SINYAL ...) ===
+    const sinyalRowRx = /\b(?:SIN|SC)\d{4,6}\s*[:|;.]*\s*(?:SINYAL\s+(?:MUKA\s+BLOK|ULANG\s+BLOK|MUKA|MASUK|KELUAR|LANGSIR|BLOK|PENGULANG|ULANG)?\s+)?([BJLMSXU]+\.?\s?\d{1,3}[A-Z]?)\s+(.*)/i;
+    for (const line of textCrop.split("\n")) {
+      const m = line.match(sinyalRowRx);
+      if (m) {
+        const sigId = m[1].replace(/[\s.]/g, "").toUpperCase();
+        if (/^M\d+$/.test(sigId)) continue; // skip false positive seperti M14
+        const locPart = m[2].trim();
+        const loc = getDualLoc(locPart) || getDualLoc(line) || defaultLoc;
+        const key = `${sigId}|${loc}`;
+        if (!seen.has(key)) {
+          seen.add(key);
+          assets.push({ id: sigId, loc });
+        }
+      }
     }
-    if (validSignals.length) {
-      const uniqueSig = getUniqueList(validSignals);
-      for (const s of uniqueSig) {
-        let sigLoc = null;
-        for (const line of textCrop.split("\n")) {
-          const lineFlat = line.replace(/\./g, "").replace(/\s/g, "");
-          if ((line.includes(s) || lineFlat.includes(s)) && !line.toUpperCase().includes("PERAWATAN")) {
-            sigLoc = getDualLoc(line); break;
+
+    // === STRATEGI 2: Fallback jika format tabel tanpa kode SIN/SC ===
+    if (!assets.length) {
+      const signalMatches = textFlat.match(SIGNAL_PATTERN) || [];
+      const validSignals = [];
+      for (const s of signalMatches) {
+        const sClean = s.replace(/\s/g, "").replace(/\./g, "");
+        if (/^M\d+$/.test(sClean)) continue;
+        if (/^[BJLMSXU]+\d+/.test(sClean)) validSignals.push(sClean);
+      }
+      if (validSignals.length) {
+        const uniqueSig = getUniqueList(validSignals);
+        for (const s of uniqueSig) {
+          let sigLoc = null;
+          for (const line of textCrop.split("\n")) {
+            const lineFlat = line.replace(/\./g, "").replace(/\s/g, "");
+            if ((line.includes(s) || lineFlat.includes(s)) && !line.toUpperCase().includes("PERAWATAN")) {
+              sigLoc = getDualLoc(line); break;
+            }
+          }
+          const loc = sigLoc || defaultLoc;
+          
+          // Filter via SINYAL_WHITELIST if location is found in whitelist
+          if (SINYAL_WHITELIST[loc] && !SINYAL_WHITELIST[loc].has(s)) {
+            continue;
+          }
+          
+          const key = `${s}|${loc}`;
+          if (!seen.has(key)) {
+            seen.add(key);
+            assets.push({ id: s, loc });
           }
         }
-        const loc = sigLoc || getDualLoc(textFlat);
-        assets.push({ id: s, loc });
       }
-    } else {
-      const loc = getDualLoc(textFlat);
-      assets.push({ id: "", loc });
+    }
+
+    // === STRATEGI 3: Fallback akhir jika tidak ada nomor aset terdeteksi ===
+    if (!assets.length) {
+      assets.push({ id: "", loc: defaultLoc });
     }
   }
 
-  // CATU DAYA
   else if (textFlat.includes("CATU DAYA")) {
     const cdaLines = textCrop.split("\n").filter(l => l.toUpperCase().includes("CDA"));
     const combinedCda = cdaLines.join(" ").toUpperCase();
     if (combinedCda.includes("ER RADIO")) { kode = "BPBYE14"; kategori = "CATU DAYA ER RADIO"; }
     else if (combinedCda.includes("ER SINYAL")) { kode = "BPBYE14"; kategori = "CATU DAYA ER SINYAL"; }
     else { kode = "BPBYE14"; kategori = "CATU DAYA"; }
-    const loc = extractFuncloc(textCrop) || getStandardLoc(textFlat);
-    const cdaRegex = /\bCDA\d{5}\s*[:|]\s*(.*)/i;
-    assets = extractTableAssets(textCrop, cdaRegex, loc);
-    if (!assets.length) {
-      assets.push({ id: "", loc });
+    let loc = extractFuncloc(textCrop) || getDualLoc(textFlat);
+    assets.push({ id: "", loc });
+  }
+
+  // SERAT OPTIK JPL (Prioritas jika ada indikasi JPL di OCR atau filename)
+  else if ((textFlat.includes("SERAT OPTIK") || filenameUpper.includes("SERAT OPTIK")) &&
+           (textCrop.toUpperCase().includes("JPL") || filenameUpper.includes("JPL"))) {
+    kode = "BPBKF4"; kategori = "SERAT OPTIK";
+    const fnLoc = getDualLoc(filenameUpper) || getStandardLoc(filenameUpper);
+    let loc = fnLoc || extractFuncloc(textCrop) || getStandardLoc(textFlat);
+
+    // Scan OCR for TRA lines with JPL
+    const jplSet = new Set();
+    for (const ocrLine of textCrop.split("\n")) {
+      const ul = ocrLine.toUpperCase().trim();
+      const m = ul.match(/TRA\d+\s*:\s*OTB\s+FO\s+JPL\s+(\S+)/) || ul.match(/OTB\s+FO\s+JPL\s+(\S+)/) || ul.match(/\bJPL\s+(\d+[A-Z]*|BNR)\b/);
+      if (m) {
+        let jplId = m[1];
+        jplId = jplId.replace(/\s+[A-Z][A-Z].*/, "").trim();
+        jplSet.add(jplId);
+      }
+    }
+
+    if (jplSet.size) {
+      assets = [...jplSet].sort().map(jplId => {
+        const fullAid = `JPL ${jplId}`;
+        const itemLoc = JPL_KNOWN_LOCS[fullAid] || loc;
+        return { id: fullAid, loc: itemLoc };
+      });
+    } else {
+      const fnMatch = filenameUpper.match(/JPL\s+(\d+[A-Z]*|BNR)/);
+      if (fnMatch) {
+        const fullAid = `JPL ${fnMatch[1].trim()}`;
+        const itemLoc = JPL_KNOWN_LOCS[fullAid] || loc || "";
+        assets = [{ id: fullAid, loc: itemLoc }];
+      } else {
+        assets = [{ id: "JPL", loc: loc || "" }];
+      }
     }
   }
 
-  // SERAT OPTIK ER
-  else if ((textFlat.includes("SERAT OPTIK") && /\bER\b/.test(textFlat)) ||
-           (!textFlat.trim() && filenameUpper.includes("SERAT OPTIK") && filenameUpper.includes(" ER "))) {
+  // SERAT OPTIK ER (OTB 1-10 ER SINYAL / ER RADIO / ER TELKOM / ER)
+  else if ((textFlat.includes("SERAT OPTIK") || filenameUpper.includes("SERAT OPTIK")) &&
+           (/\bER\s+SINYAL\b/.test(textFlat) || /\bER\s+RADIO\b/.test(textFlat) || /\bER\s+TELKOM\b/.test(textFlat) ||
+            /OTB\s+(?:FO\s+)?ER\b/.test(textFlat) || /OTB\s+\d+\s+ER\b/.test(textFlat) ||
+            filenameUpper.includes("ER SINYAL") || filenameUpper.includes("ER RADIO") || filenameUpper.includes("ER TELKOM") || filenameUpper.includes(" ER "))) {
     kode = "BPBKF4"; kategori = "SERAT OPTIK";
 
     // === 1. Deteksi sub-type ER: SINYAL > RADIO > TELKOM > generic ER ===
@@ -593,7 +668,7 @@ export function detectDoc(textFlat, textCrop, filenameUpper) {
         otbMin = +rangeMatch[1]; otbMax = +rangeMatch[2]; firstOtb = otbMin;
         hasOtbNumbers = true;
       } else if (singleMatch) {
-        otbMin = +singleMatch[1]; otbMax = otbMin; firstOtb = otbMin;
+        otbMin = +singleMatch[1]; otbMax = +singleMatch[1]; firstOtb = otbMin;
         hasOtbNumbers = true;
       }
     }
@@ -602,7 +677,7 @@ export function detectDoc(textFlat, textCrop, filenameUpper) {
     let loc = null;
     for (const line of textCrop.split("\n")) {
       const ul = line.toUpperCase();
-      if (ul.includes("OTB") && ul.includes("ER")) {
+      if (ul.includes("OTB") && (ul.includes("ER") || ul.includes("SINYAL") || ul.includes("TELKOM") || ul.includes("RADIO"))) {
         const parts = ul.split(":");
         if (parts.length >= 2) {
           let after = parts[parts.length - 1].trim();
@@ -620,58 +695,34 @@ export function detectDoc(textFlat, textCrop, filenameUpper) {
       }
     }
     if (!loc) {
-      loc = getStandardLoc(filenameUpper) || extractFuncloc(textCrop) || getStandardLoc(textFlat);
+      loc = getDualLoc(filenameUpper) || getStandardLoc(filenameUpper) || extractFuncloc(textCrop) || getStandardLoc(textFlat);
     }
 
     assets = [{ id: erType, loc, firstOtb, erType, otbMin, otbMax, hasOtbNumbers }];
   }
 
-  // SERAT OPTIK non-ER (JPL / Bulanan)
-  else if (textFlat.includes("SERAT OPTIK")) {
+  // SERAT OPTIK Bulanan biasa (Stasiun / Non-ER Non-JPL)
+  else if (textFlat.includes("SERAT OPTIK") || filenameUpper.includes("SERAT OPTIK")) {
     kode = "BPBKF4"; kategori = "SERAT OPTIK";
-    const fnLoc = getStandardLoc(filenameUpper);
+    const fnLoc = getDualLoc(filenameUpper) || getStandardLoc(filenameUpper);
     let loc = fnLoc || extractFuncloc(textCrop) || getStandardLoc(textFlat);
-
-    // Scan OCR for TRA lines with JPL
-    const jplSet = new Set();
-    for (const ocrLine of textCrop.split("\n")) {
-      const ul = ocrLine.toUpperCase().trim();
-      const m = ul.match(/TRA\d+\s*:\s*OTB\s+FO\s+JPL\s+(\S+)/);
-      if (m) {
-        let jplId = m[1];
-        jplId = jplId.replace(/\s+[A-Z][A-Z].*/, "");
-        jplSet.add(jplId);
-      }
-    }
-
-    if (jplSet.size) {
-      assets = [...jplSet].sort().map(jplId => ({ id: `JPL ${jplId}`, loc }));
-    } else {
-      const fnMatch = filenameUpper.match(/JPL\s+(\d+[A-Z]*)/);
-      if (fnMatch) {
-        assets = [{ id: `JPL ${fnMatch[1]}`, loc: loc || "" }];
-      } else {
-        const seqMatch = filenameUpper.match(/_0*(\d+)\s/);
-        const seqNum = seqMatch ? +seqMatch[1] : 1;
-        assets = [{ id: "", loc, seqNum, isBulanan: true }];
-      }
-    }
+    const seqMatch = filenameUpper.match(/_0*(\d+)\s/) || filenameUpper.match(/\((\d+)\)/);
+    const seqNum = seqMatch ? +seqMatch[1] : 1;
+    assets = [{ id: "", loc, seqNum, isBulanan: true }];
   }
 
   // ---------- Filename-based fallback ----------
   if (!assets.length) {
-    const loc = getStandardLoc(filenameUpper);
+    let loc = getDualLoc(filenameUpper) || getStandardLoc(filenameUpper);
 
     if (filenameUpper.includes("WESEL")) {
       kode = "BPBYE1"; kategori = "WESEL";
-      // Safety: jangan ambil ID dari filename (bisa salah seperti W222/W322R)
       assets = [{ id: "W_UNKNOWN", loc }];
     } else if (filenameUpper.includes("POINT LOCK")) {
       kode = "BPBYE12"; kategori = "POINT LOCK";
-      assets = [{ id: "PL", loc }];
+      assets = [{ id: "W81", loc: "BOO" }];
     } else if (filenameUpper.includes("AXLE COUNTER")) {
       kode = "BPBYE7"; kategori = "AXLE COUNTER";
-      // Safety: jangan ambil ID dari filename (bisa salah seperti ZP 2)
       assets = [{ id: "ZP", loc }];
     } else if (filenameUpper.includes("SINYAL")) {
       kode = "BPBYE3"; kategori = "PERAGA SINYAL";
@@ -682,7 +733,8 @@ export function detectDoc(textFlat, textCrop, filenameUpper) {
       else if (filenameUpper.includes(" ER ") || filenameUpper.endsWith(" ER")) assets = [{ id: "ER", loc }];
       else assets = [{ id: "", loc }];
     } else if (filenameUpper.includes("CTC") && filenameUpper.includes("CTS")) {
-      kode = "BPBYE4"; kategori = "CTC-CTS"; assets = [{ id: "", loc }];
+      kode = "BPBYE4"; kategori = "CTC-CTS";
+      assets = [{ id: "", loc }];
     } else if (filenameUpper.includes("RADIO BASESTATION")) {
       if (filenameUpper.includes("TAIT")) { kode = "BPBKF3"; kategori = "RADIO BASESTATION TAIT"; }
       else if (filenameUpper.includes("DIGITAL")) { kode = "BPBKF2"; kategori = "RADIO BASESTATION DIGITAL"; }
@@ -697,11 +749,20 @@ export function detectDoc(textFlat, textCrop, filenameUpper) {
       const fnMatch = filenameUpper.match(/JPL\s+(?:ELEKTRIK\s+)?([A-Z0-9]+)/);
       assets = fnMatch ? [{ id: `JPL ${fnMatch[1]}`, loc: loc || "" }] : [{ id: "", loc: loc || "" }];
     } else if (filenameUpper.includes("PDSE") || filenameUpper.includes("PERALATAN DALAM PERSINYALAN")) {
-      kode = "BPBYE2"; kategori = "PDSE"; assets = [{ id: "", loc }];
+      kode = "BPBYE2"; kategori = "PDSE"; 
+      assets = [{ id: "", loc }];
     } else if (filenameUpper.includes("PTDS") || filenameUpper.includes("TELEKOMUNIKASI DI STASIUN")) {
       kode = "BPBKS15"; kategori = "PTDS"; assets = [{ id: "", loc }];
     } else if (filenameUpper.includes("PTLS") || filenameUpper.includes("TELEKOMUNIKASI DI LUAR STASIUN")) {
-      kode = "BPBKS16"; kategori = "PTLS"; assets = [{ id: "", loc }];
+      kode = "BPBKS16"; kategori = "PTLS"; 
+      assets = [{ id: "", loc }];
+    }
+  }
+
+  // Ensure location is never empty (fallback to UNKNOWN for tracing)
+  for (const a of assets) {
+    if (!a.loc) {
+      a.loc = "UNKNOWN";
     }
   }
 

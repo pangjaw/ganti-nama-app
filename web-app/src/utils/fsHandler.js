@@ -15,10 +15,13 @@ async function apiPost(endpoint, body) {
       headers: { 'Content-Type': 'application/json' },
       body: body ? JSON.stringify(body) : undefined,
     });
-    if (!res.ok) return null;
+    if (!res.ok) {
+      const errJson = await res.json().catch(() => null);
+      return { ok: false, error: errJson?.error || `HTTP ${res.status}` };
+    }
     return await res.json();
-  } catch {
-    return null;
+  } catch (err) {
+    return { ok: false, error: err.message };
   }
 }
 
@@ -47,6 +50,16 @@ export async function pickDirectory() {
   }
 }
 
+function uint8ToBase64(bytes) {
+  let binary = '';
+  const len = bytes.byteLength;
+  const chunkSize = 0x8000; // 32KB chunking for high performance without call stack overflow
+  for (let i = 0; i < len; i += chunkSize) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, Math.min(i + chunkSize, len)));
+  }
+  return btoa(binary);
+}
+
 /**
  * Write a file to selected directory.
  * Desktop: POST /api/save-file. Browser: FileSystemDirectoryHandle.
@@ -56,14 +69,11 @@ export async function pickDirectory() {
  */
 export async function writeFileToDir(dir, filename, data) {
   if (dir.isDesktop) {
-    // Desktop: send base64 via API
+    // Desktop: send base64 via API with explicit target folder
     const bytes = new Uint8Array(data);
-    let binary = '';
-    for (let i = 0; i < bytes.length; i++) {
-      binary += String.fromCharCode(bytes[i]);
-    }
-    const result = await apiPost('save-file', { filename, data: btoa(binary) });
-    if (!result || !result.ok) throw new Error('Gagal menyimpan file');
+    const b64 = uint8ToBase64(bytes);
+    const result = await apiPost('save-file', { filename, data: b64, folder: dir.path });
+    if (!result || !result.ok) throw new Error(result?.error || 'Gagal menyimpan file');
     return;
   }
 
@@ -89,6 +99,17 @@ export async function createZipBlob(files) {
 }
 
 /**
+ * Save a single file with native Windows Save As dialog.
+ * @param {string} filename
+ * @param {string} base64Data
+ * @returns {Promise<{ok: boolean, path?: string, cancelled?: boolean}>}
+ */
+export async function saveFileWithDialog(filename, base64Data) {
+  const result = await apiPost('save-dialog-file', { filename, data: base64Data });
+  return result;
+}
+
+/**
  * Trigger browser download of a blob as a file.
  * @param {Blob} blob
  * @param {string} filename
@@ -102,4 +123,37 @@ export function triggerDownload(blob, filename) {
   a.click();
   document.body.removeChild(a);
   URL.revokeObjectURL(url);
+}
+
+/**
+ * List all PDF files inside a directory handle (browser) or directory path (desktop).
+ * @param {{name:string, isDesktop:boolean, handle?:FileSystemDirectoryHandle, path?:string}} dir
+ * @returns {Promise<string[]>} List of PDF filenames
+ */
+export async function listPdfsInFolder(dir) {
+  if (!dir) return [];
+  if (dir.isDesktop && dir.path) {
+    try {
+      const res = await fetch(`${API}/list-folder-pdfs?folder=${encodeURIComponent(dir.path)}`);
+      if (res.ok) {
+        const data = await res.json();
+        return (data.files || []).map(f => (typeof f === 'string' ? f : f.name || ''));
+      }
+    } catch (e) {
+      console.error('Error fetching folder pdfs:', e);
+    }
+  } else if (dir.handle) {
+    try {
+      const names = [];
+      for await (const entry of dir.handle.values()) {
+        if (entry.kind === 'file' && entry.name.toLowerCase().endsWith('.pdf')) {
+          names.push(entry.name);
+        }
+      }
+      return names;
+    } catch (e) {
+      console.error('Error reading directory handle:', e);
+    }
+  }
+  return [];
 }

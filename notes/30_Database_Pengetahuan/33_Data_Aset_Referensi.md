@@ -3,8 +3,11 @@
 #knowledge #referensi #aset
 
 > [!tip] Kembali ke [[00_Dashboard|Dashboard Utama]]
-
-Berdasarkan file **`DATA ASET RESOR 2026.pdf`** dan **`DATA ASET RESOR 2026.xlsx`** — acuan resmi UPT Resor Sintelis 1.21 Boo.
+> 
+> 📄 **File Master Lengkap (Siap Copy untuk Project Lain):**
+> [`DATA_ASET_RESOR_2026_MASTER.md`](file:///c:/Users/dikarm/Documents/Server/ganti-nama-app/DATA_ASET_RESOR_2026_MASTER.md)
+> 
+> Berdasarkan file **`DATA ASET RESOR 2026.pdf`** dan **`DATA ASET RESOR 2026.xlsx`** — acuan resmi UPT Resor Sintelis 1.21 Boo.
 **Menggantikan data lama dari `data aset.xlsx` yang tidak akurat.**
 
 > [!warning] Data sebelumnya (dari `data aset.xlsx`) sudah tidak dipakai!

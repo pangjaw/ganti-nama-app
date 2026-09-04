@@ -5,14 +5,18 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { detectDoc, buildFilename } from './utils/detector';
 import { processSingleFile } from './utils/pdfProcessor';
-import { pickDirectory, writeFileToDir, createZipBlob, triggerDownload } from './utils/fsHandler';
+import { pickDirectory, writeFileToDir, createZipBlob, triggerDownload, saveFileWithDialog } from './utils/fsHandler';
+import P3STEDownloader from './components/P3STEDownloader';
+import AssetAuditPanel from './components/AssetAuditPanel';
 import * as XLSX from 'xlsx';
 
 export default function App() {
+  const [mainTab, setMainTab] = useState('ocr'); // 'ocr' | 'downloader'
   const [files, setFiles] = useState([]);
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
   const [message, setMessage] = useState(null);
+
   const [jenisKegiatan, setJenisKegiatan] = useState('Perawatan');
   const [instansi, setInstansi] = useState('BTP JAK');
   const [dirHandle, setDirHandle] = useState(null);
@@ -173,7 +177,7 @@ export default function App() {
       // Wrap setiap file dengan timeout
       const batchResults = await Promise.allSettled(
         chunk.map(f => Promise.race([
-          processSingleFile(f, detectDoc),
+          processSingleFile(f, (flat, crop, upper) => detectDoc(flat, crop, upper, formatBd)),
           new Promise((_, reject) =>
             setTimeout(() => reject(new Error(`TIMEOUT: proses file >30 detik`)), TIMEOUT_MS)
           )
@@ -356,68 +360,215 @@ export default function App() {
     setMessage({ type: 'success', text: 'Log berhasil disalin ke clipboard.' });
   }, [logs]);
 
-  const handleExportLogs = useCallback(() => {
+  const handleExportLogs = useCallback(async () => {
     if (!logs.length) return;
-    const text = logs.map(l => {
-      const time = new Date(l.ts).toLocaleTimeString();
-      return `[${time}] [${l.type.toUpperCase()}] ${l.msg}`;
-    }).join('\n');
-    const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `SintelisUtility_Log_${new Date().toISOString().slice(0, 10)}.txt`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }, [logs]);
+    try {
+      const text = logs.map(l => {
+        const time = new Date(l.ts).toLocaleTimeString();
+        return `[${time}] [${l.type.toUpperCase()}] ${l.msg}`;
+      }).join('\n');
+      const filename = `SintelisUtility_Log_${new Date().toISOString().slice(0, 10)}.txt`;
+      const b64 = btoa(unescape(encodeURIComponent(text)));
+      const res = await saveFileWithDialog(filename, b64);
+      if (res && res.ok) {
+        addLog('success', `Log diekspor ke: ${res.path}`);
+        setMessage({ type: 'success', text: `Log berhasil disimpan ke: ${res.path}` });
+      } else if (res && res.cancelled) {
+        addLog('info', 'Penyimpanan log dibatalkan.');
+      } else {
+        const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+        triggerDownload(blob, filename);
+        addLog('success', 'Log diekspor.');
+      }
+    } catch (err) {
+      addLog('error', `Gagal ekspor log: ${err.message}`);
+    }
+  }, [logs, addLog]);
 
   const handleSave = useCallback(async () => {
     if (!results.length) return;
     setProcessing(true);
     if (dirHandle) {
       let savedCount = 0;
-      try {
-        for (const f of results) {
+      let failCount = 0;
+      for (const f of results) {
+        try {
           await writeFileToDir(dirHandle, f.name, f.data);
           savedCount++;
+        } catch (err) {
+          failCount++;
+          addLog('error', `Gagal simpan "${f.name}": ${err.message}`);
         }
+      }
+      if (failCount === 0) {
         addLog('success', `${savedCount} file tersimpan ke "${dirHandle.name}"`);
         setMessage({ type: 'success', text: `${savedCount} file tersimpan ke "${dirHandle.name}"` });
-      } catch (err) {
-        addLog('error', `Gagal tulis folder: ${err.message}`);
-        setMessage({ type: 'error', text: `Gagal tulis folder: ${err.message}` });
+      } else {
+        addLog('warning', `${savedCount} file berhasil disimpan, ${failCount} gagal.`);
+        setMessage({ type: 'warning', text: `${savedCount} file berhasil disimpan, ${failCount} gagal (lihat log).` });
       }
     } else {
-      const blob = await createZipBlob(results);
-      triggerDownload(blob, 'Hasil_Rename.zip');
-      addLog('success', `ZIP diunduh (${results.length} file)`);
-      setMessage({ type: 'success', text: `${results.length} file dalam ZIP diunduh.` });
+      try {
+        const blob = await createZipBlob(results);
+        const reader = new FileReader();
+        reader.onloadend = async () => {
+          const b64data = reader.result.split(',')[1];
+          const res = await saveFileWithDialog('Hasil_Rename.zip', b64data);
+          if (res && res.ok) {
+            addLog('success', `ZIP tersimpan: ${res.path}`);
+            setMessage({ type: 'success', text: `ZIP berhasil disimpan ke: ${res.path}` });
+          } else if (res && res.cancelled) {
+            addLog('info', 'Penyimpanan ZIP dibatalkan.');
+          } else {
+            triggerDownload(blob, 'Hasil_Rename.zip');
+            addLog('success', `ZIP diunduh (${results.length} file)`);
+            setMessage({ type: 'success', text: `${results.length} file dalam ZIP diunduh.` });
+          }
+        };
+        reader.readAsDataURL(blob);
+      } catch (zipErr) {
+        addLog('error', `Gagal membuat ZIP: ${zipErr.message}`);
+      }
     }
     setProcessing(false);
   }, [results, dirHandle, addLog]);
 
-  const handleExportExcel = useCallback(() => {
+  const handleExportExcel = useCallback(async () => {
     if (!results.length) return;
-    const wsData = [['No', 'Nama File Baru']];
-    results.forEach((r, i) => wsData.push([i + 1, r.name]));
-    const ws = XLSX.utils.aoa_to_sheet(wsData);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, 'Hasil Rename');
-    XLSX.writeFile(wb, `Hasil_Rename_${new Date().toISOString().slice(0, 10)}.xlsx`);
-    addLog('success', `Excel diekspor (${results.length} file)`);
-    setMessage({ type: 'success', text: 'Excel berhasil diekspor.' });
+    try {
+      const wsData = [['No', 'Nama File Baru']];
+      results.forEach((r, i) => wsData.push([i + 1, r.name]));
+      const ws = XLSX.utils.aoa_to_sheet(wsData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Hasil Rename');
+      const filename = `Hasil_Rename_${new Date().toISOString().slice(0, 10)}.xlsx`;
+      
+      const b64 = XLSX.write(wb, { bookType: 'xlsx', type: 'base64' });
+      const res = await saveFileWithDialog(filename, b64);
+      if (res && res.ok) {
+        addLog('success', `Excel tersimpan: ${res.path}`);
+        setMessage({ type: 'success', text: `Excel berhasil disimpan ke: ${res.path}` });
+      } else if (res && res.cancelled) {
+        addLog('info', 'Penyimpanan Excel dibatalkan.');
+      } else {
+        XLSX.writeFile(wb, filename);
+        addLog('success', `Excel diekspor (${results.length} file)`);
+        setMessage({ type: 'success', text: 'Excel berhasil diekspor.' });
+      }
+    } catch (err) {
+      addLog('error', `Gagal ekspor Excel: ${err.message}`);
+      setMessage({ type: 'error', text: `Gagal ekspor Excel: ${err.message}` });
+    }
   }, [results, addLog]);
+
+  const handleHandoffFromDownloader = useCallback(async (downloadedFiles, folderPath) => {
+    setMainTab('ocr');
+    setMessage({
+      type: 'info',
+      text: `Memuat file PDF dari folder unduhan: ${folderPath}...`
+    });
+    addLog('info', `Diterima sinyal alih dokumen dari Downloader P3-STE. Folder: ${folderPath}`);
+
+    // Otomatis arahkan folder penyimpanan output ke folder yang sama
+    if (folderPath) {
+      const folderName = folderPath.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || folderPath;
+      setDirHandle({ name: folderName, isDesktop: true, path: folderPath });
+    }
+
+    try {
+      let fileTargets = Array.isArray(downloadedFiles) && downloadedFiles.length > 0 ? downloadedFiles : [];
+
+      // Jika fileTargets kosong, ambil daftar file PDF langsung dari folder di backend
+      if (!fileTargets.length && folderPath) {
+        const listRes = await fetch(`/api/list-folder-pdfs?folder=${encodeURIComponent(folderPath)}`);
+        if (listRes.ok) {
+          const listData = await listRes.json();
+          fileTargets = listData.files || [];
+        }
+      }
+
+      if (!fileTargets.length) {
+        setMessage({
+          type: 'error',
+          text: `Tidak ada file PDF yang ditemukan di folder: ${folderPath}`
+        });
+        addLog('warn', `Tidak ada file PDF ditemukan di folder: ${folderPath}`);
+        return;
+      }
+
+      addLog('info', `Mengambil data ${fileTargets.length} file PDF ke Menu 1...`);
+      const loadedFiles = [];
+      for (const df of fileTargets) {
+        try {
+          const res = await fetch(`/api/get-file?path=${encodeURIComponent(df.path)}`);
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const blob = await res.blob();
+          const file = new File([blob], df.name, { type: 'application/pdf' });
+          file.nativePath = df.path;
+          loadedFiles.push(file);
+        } catch (fErr) {
+          addLog('warn', `Gagal memuat ${df.name}: ${fErr.message}`);
+        }
+      }
+
+      if (loadedFiles.length > 0) {
+        setFiles(prev => {
+          const existingNames = new Set(prev.map(f => f.name));
+          const newFiles = loadedFiles.filter(f => !existingNames.has(f.name));
+          return [...prev, ...newFiles];
+        });
+        setMessage({
+          type: 'success',
+          text: `Berhasil memuat ${loadedFiles.length} file PDF dari Downloader P3-STE. Klik tombol "Proses File" untuk memulai rename.`
+        });
+        addLog('success', `✓ ${loadedFiles.length} file PDF siap diproses di Menu 1!`);
+      } else {
+        setMessage({
+          type: 'error',
+          text: `Gagal membaca isi file PDF dari folder: ${folderPath}`
+        });
+      }
+    } catch (err) {
+      addLog('error', `Gagal menghubungkan file dari downloader: ${err.message}`);
+      setMessage({
+        type: 'error',
+        text: `Error alih file: ${err.message}`
+      });
+    }
+  }, [addLog]);
 
   return (
     <div className="app-container">
       <header className="app-header">
-        <h1>Sintelis Utility</h1>
-        <p>Renamer file — diproses langsung di browser Anda</p>
+        <h1>Sintelis Utility 2.0</h1>
+        <p>Aplikasi OCR Renamer & Downloader Rekap Checklist P3-STE</p>
+        
+        <nav className="main-nav-bar">
+          <button
+            className={`nav-tab-btn ${mainTab === 'ocr' ? 'active' : ''}`}
+            onClick={() => setMainTab('ocr')}
+          >
+            📄 Menu 1: OCR & Rename PDF
+          </button>
+          <button
+            className={`nav-tab-btn ${mainTab === 'downloader' ? 'active' : ''}`}
+            onClick={() => setMainTab('downloader')}
+          >
+            📥 Menu 2: Downloader Rekap P3-STE
+          </button>
+        </nav>
       </header>
 
-      <div className="main-content">
+      {/* Downloader Tab View (Persisted in DOM to avoid reset on tab switch) */}
+      <div style={{ display: mainTab === 'downloader' ? 'flex' : 'none', flexDirection: 'column', flex: 1, minHeight: 0, overflowY: 'auto' }}>
+        <P3STEDownloader 
+          onSendToOCR={handleHandoffFromDownloader} 
+          onStopAllProcesses={handleCancel} 
+        />
+      </div>
+
+      {/* OCR Tab View (Persisted in DOM) */}
+      <div className="main-content" style={{ display: mainTab === 'ocr' ? 'flex' : 'none' }}>
         {/* --------- LEFT PANEL --------- */}
         <div className="left-panel"
           onDragOver={e => { e.preventDefault(); }}
@@ -529,6 +680,12 @@ export default function App() {
                 <button className="btn btn-secondary" onClick={handleExportExcel}>
                   📊 Ekspor Excel
                 </button>
+                <button
+                  className={`btn btn-secondary ${activeTab === 'audit' ? 'active' : ''}`}
+                  onClick={() => setActiveTab('audit')}
+                >
+                  📊 Audit Kelengkapan
+                </button>
                 {!processing && errorFileNames.length > 0 && (
                   <button className="btn btn-danger" onClick={handleRetryErrors}>
                     🔄 Proses Ulang Error ({errorFileNames.length} file)
@@ -540,8 +697,8 @@ export default function App() {
 
           {/* --------- Split View: Hasil/Error | Log --------- */}
           <div className="split-view">
-            {/* Split Left: Hasil / Error (tabbed) */}
-            <div className="split-left">
+            {/* Split Left: Hasil / Error / Audit (tabbed) */}
+            <div className={`split-left ${activeTab === 'audit' ? 'audit-expanded' : ''}`}>
               <div className="tab-bar">
                 <button
                   className={`tab-btn${activeTab === 'hasil' ? ' active' : ''}`}
@@ -554,6 +711,12 @@ export default function App() {
                   onClick={() => setActiveTab('error')}
                 >
                   Error{errors.length > 0 && <span className="tab-badge" style={{ background: 'rgba(255,94,125,0.15)', color: 'var(--danger)' }}>{errors.length}</span>}
+                </button>
+                <button
+                  className={`tab-btn${activeTab === 'audit' ? ' active' : ''}`}
+                  onClick={() => setActiveTab('audit')}
+                >
+                  📊 Audit Aset
                 </button>
               </div>
               <div className="split-lists" key={visibilityKey}>
@@ -590,6 +753,15 @@ export default function App() {
                     })}
                   </>
                 )}
+                {activeTab === 'audit' && (
+                  <div style={{ padding: '0.5rem' }}>
+                    <AssetAuditPanel
+                      results={results}
+                      onLog={addLog}
+                      onMessage={setMessage}
+                    />
+                  </div>
+                )}
               </div>
             </div>
 
@@ -624,7 +796,7 @@ export default function App() {
       </div>
 
       <footer className="app-footer">
-        Sintelis Utility — Client-Side (PDF.js + Tesseract.js)
+        Sintelis Utility 2.0 — Client-Side (PDF.js + Tesseract.js) & P3-STE Downloader Engine
       </footer>
     </div>
   );
