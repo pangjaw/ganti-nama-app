@@ -8,20 +8,30 @@ import JSZip from 'jszip';
 
 const API = '/api';
 
-async function apiPost(endpoint, body) {
-  try {
-    const res = await fetch(`${API}/${endpoint}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: body ? JSON.stringify(body) : undefined,
-    });
-    if (!res.ok) {
-      const errJson = await res.json().catch(() => null);
-      return { ok: false, error: errJson?.error || `HTTP ${res.status}` };
+async function apiPost(endpoint, body, maxRetries = 3) {
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const res = await fetch(`${API}/${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      if (!res.ok) {
+        const errJson = await res.json().catch(() => null);
+        if (res.status >= 500 && attempt < maxRetries) {
+          await new Promise(r => setTimeout(r, 200 * attempt));
+          continue;
+        }
+        return { ok: false, error: errJson?.error || `HTTP ${res.status}` };
+      }
+      return await res.json();
+    } catch (err) {
+      if (attempt < maxRetries) {
+        await new Promise(r => setTimeout(r, 200 * attempt));
+        continue;
+      }
+      return { ok: false, error: err.message };
     }
-    return await res.json();
-  } catch (err) {
-    return { ok: false, error: err.message };
   }
 }
 
@@ -67,14 +77,13 @@ function uint8ToBase64(bytes) {
  * @param {string} filename
  * @param {ArrayBuffer|Uint8Array} data
  */
-export async function writeFileToDir(dir, filename, data) {
+export async function writeFileToDir(dir, filename, data, relativePath = filename, conflictMode = 'rename') {
   if (dir.isDesktop) {
-    // Desktop: send base64 via API with explicit target folder
     const bytes = new Uint8Array(data);
     const b64 = uint8ToBase64(bytes);
-    const result = await apiPost('save-file', { filename, data: b64, folder: dir.path });
+    const result = await apiPost('save-file', { filename, relativePath, conflictMode, data: b64, folder: dir.path });
     if (!result || !result.ok) throw new Error(result?.error || 'Gagal menyimpan file');
-    return;
+    return result;
   }
 
   // Browser: File System Access API

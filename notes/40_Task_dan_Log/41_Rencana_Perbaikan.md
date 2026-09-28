@@ -20,6 +20,9 @@ Halaman ini digunakan untuk memantau rencana perbaikan dan backlog pengembangan 
 
 ## 📝 Agenda Pengembangan Mendatang (Backlog)
 
+- `[ ]` **Sistem Auto-Update Otomatis berbasis PC Server (`10.1.37.114`)**
+  - *Target*: Aplikasi desktop di PC klien otomatis cek versi dan download rilis terbaru dari PC server kantor via atomic swap updater (`sintelis_updater.bat`).
+  - *Dokumentasi*: Lihat [[48_Rencana_Auto_Update_Server_10.1.37.114|Cetak Biru Auto-Update Server 10.1.37.114]].
 - `[ ]` **Perbaikan akurasi OCR untuk Serat Optik OTB**
   - *Target*: Perbaiki regex negative lookbehind di detector.js untuk exclude `ODF/OTB` core count.
 - `[ ]` **Progress bar per file**

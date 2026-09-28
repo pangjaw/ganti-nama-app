@@ -5,28 +5,56 @@
 
 import * as XLSX from 'xlsx';
 
+const pairs = {
+  'BOO-CLT': 'CLT-BOO',
+  'CLT-BJD': 'BJD-CLT',
+  'MSG-BTT': 'BTT-MSG',
+  'CCR-MSG': 'MSG-CCR',
+  'BTT-BOP': 'BOP-BTT',
+  'BOO-BTT': 'BOP-BTT',
+  'BOO-BOP': 'BOP',
+};
+
 /**
  * Normalisasi kode petak lintas bolak-balik ke format kanonikal master aset
  */
 export function normalizeSectionLoc(loc) {
   if (!loc) return 'UNKNOWN';
   loc = loc.toUpperCase().trim();
-  const pairs = {
-    'BOO-CLT': 'CLT-BOO',
-    'CLT-BJD': 'BJD-CLT',
-    'MSG-BTT': 'BTT-MSG',
-    'CCR-MSG': 'MSG-CCR',
-    'BTT-BOP': 'BOP-BTT',
-    'BOO-BTT': 'BOP-BTT',
-    'BOO-BOP': 'BOP',
-  };
   return pairs[loc] || loc;
 }
 
+const SECTION_STATION_MAP = {
+  'BTT-MSG': ['BTT', 'COS', 'MSG'],
+  'MSG-CCR': ['MSG', 'CGB', 'CCR'],
+  'CLT-BOO': ['CLT', 'BOO'],
+  'BJD-CLT': ['BJD', 'CLT'],
+  'BOP-BTT': ['BOP', 'BTT'],
+};
+
 /**
- * Daftar Master Aset Resor 1.21 BOO
+ * Cek apakah dua lokasi stasiun/petak saling beririsan atau berada di petak yang sama
+ */
+export function locsOverlap(loc1, loc2) {
+  if (!loc1 || !loc2) return false;
+  const n1 = normalizeSectionLoc(loc1);
+  const n2 = normalizeSectionLoc(loc2);
+  if (n1 === n2) return true;
+  const stationsFor = (loc) => {
+    const list = [loc];
+    if (SECTION_STATION_MAP[loc]) list.push(...SECTION_STATION_MAP[loc]);
+    if (loc.includes('-')) list.push(...loc.split('-'));
+    return list;
+  };
+  const s1 = stationsFor(n1);
+  const s2 = stationsFor(n2);
+  return s1.some(x => s2.includes(x));
+}
+
+/**
+ * Daftar Master Aset Resor 1.21 BOO Sesuai Dokumen & Form Resmi SAP
  * period:
- *  - 'BULANAN': Pemeliharaan rutin bulanan / 2-mingguan (Target standar: 398 file)
+ *  - 'BULANAN': Pemeliharaan rutin bulanan / 2-mingguan
  *  - '3_BULANAN': Radio Waystation (Target: 9 file)
  *  - '6_BULANAN': Radio Basestation (Target: 5 file)
  *  - '1_TAHUNAN': Khusus Sistem Waystation (Target: 1 file)
@@ -34,6 +62,7 @@ export function normalizeSectionLoc(loc) {
 export const MASTER_ASSETS = [
   // =========================================================================
   // 1. WESEL (ELEKTRIK & MEKANIK) — Kode BPBYE1 (Frekuensi 2-Mingguan -> Target: 2 file)
+  // Total 31 Unit = 62 File
   // =========================================================================
   ...[
     'W13', 'W21A', 'W21B1', 'W21B2', 'W23A', 'W23B',
@@ -52,32 +81,31 @@ export const MASTER_ASSETS = [
 
   // =========================================================================
   // 3. PERAGA SINYAL — Kode BPBYE3 (Bulanan -> Target: 1 file)
+  // Total 125 Unit
   // =========================================================================
   ...[
-    'B214', 'J10', 'J20', 'JL12A', 'JL12B', 'JL22A', 'JL22B', 'JL32A', 'JL32B',
+    'J10', 'J20', 'JL12A', 'JL12B', 'JL22A', 'JL22B', 'JL32A', 'JL32B',
     'JL42A', 'JL42B', 'JL42C', 'JL52', 'JL62B', 'JL72', 'JL92', 'L20', 'L60', 'L62A', 'L80', 'MJ20'
   ].map(id => ({ key: `SINYAL_${id}_BOO`, category: 'PERAGA SINYAL', categoryDisplay: 'PERAGA SINYAL', id, loc: 'BOO', period: 'BULANAN', target: 1 })),
 
   ...['J10', 'J12A', 'J12B', 'J14', 'J20', 'J22', 'J24', 'MJ14', 'MJ20'].map(id => ({ key: `SINYAL_${id}_CLT`, category: 'PERAGA SINYAL', categoryDisplay: 'PERAGA SINYAL', id, loc: 'CLT', period: 'BULANAN', target: 1 })),
-  ...['J10', 'J12A', 'J12B', 'J14', 'J20', 'J22A', 'J22B', 'J24', 'MJ10', 'MJ14', 'MJ20', 'MJ24'].map(id => ({ key: `SINYAL_${id}_BTT`, category: 'PERAGA SINYAL', categoryDisplay: 'PERAGA SINYAL', id, loc: 'BTT', period: 'BULANAN', target: 1 })),
-  ...['J28', 'J48', 'JL26A', 'JL26B', 'JL46A', 'JL46B', 'JL66B', 'L28', 'L47A', 'L47B', 'L68', 'MJ28', 'MJ48', 'UJ26B'].map(id => ({ key: `SINYAL_${id}_BOP`, category: 'PERAGA SINYAL', categoryDisplay: 'PERAGA SINYAL', id, loc: 'BOP', period: 'BULANAN', target: 1 })),
+  ...['J10', 'J12A', 'J12B', 'J14', 'J20', 'J22A', 'J22B', 'J24'].map(id => ({ key: `SINYAL_${id}_BTT`, category: 'PERAGA SINYAL', categoryDisplay: 'PERAGA SINYAL', id, loc: 'BTT', period: 'BULANAN', target: 1 })),
+  ...['J28', 'J48', 'JL26A', 'JL26B', 'JL46A', 'JL46B', 'JL66B', 'L28', 'L47A', 'L47B', 'L68', 'UJ26B'].map(id => ({ key: `SINYAL_${id}_BOP`, category: 'PERAGA SINYAL', categoryDisplay: 'PERAGA SINYAL', id, loc: 'BOP', period: 'BULANAN', target: 1 })),
   ...['MJ10', 'MJ20', 'MJ28', 'MJ48'].map(id => ({ key: `SINYAL_${id}_BOP-BTT`, category: 'PERAGA SINYAL', categoryDisplay: 'PERAGA SINYAL', id, loc: 'BOP-BTT', period: 'BULANAN', target: 1 })),
-  ...['B101', 'B201', 'MB101', 'MB201'].map(id => ({ key: `SINYAL_${id}_CGB`, category: 'PERAGA SINYAL', categoryDisplay: 'PERAGA SINYAL', id, loc: 'CGB', period: 'BULANAN', target: 1 })),
-  ...['B101', 'B201', 'MB101', 'MB201'].map(id => ({ key: `SINYAL_${id}_COS`, category: 'PERAGA SINYAL', categoryDisplay: 'PERAGA SINYAL', id, loc: 'COS', period: 'BULANAN', target: 1 })),
-  ...['J10', 'J12B', 'J14', 'J20', 'J22A', 'J22B', 'J24', 'MJ10', 'MJ14', 'MJ20', 'MJ24', 'UJ12', 'UJ22B'].map(id => ({ key: `SINYAL_${id}_MSG`, category: 'PERAGA SINYAL', categoryDisplay: 'PERAGA SINYAL', id, loc: 'MSG', period: 'BULANAN', target: 1 })),
-  ...['B101', 'B102', 'B205', 'B206', 'B207', 'MJ20', 'UB101', 'UB102', 'UB205', 'UB206'].map(id => ({ key: `SINYAL_${id}_BJD-CLT`, category: 'PERAGA SINYAL', categoryDisplay: 'PERAGA SINYAL', id, loc: 'BJD-CLT', period: 'BULANAN', target: 1 })),
+  ...['B101', 'B201', 'MB101', 'MB201', 'MJ10', 'MJ14', 'MJ20', 'MJ24'].map(id => ({ key: `SINYAL_${id}_BTT-MSG`, category: 'PERAGA SINYAL', categoryDisplay: 'PERAGA SINYAL', id, loc: 'BTT-MSG', period: 'BULANAN', target: 1 })),
+  ...['B101', 'B201', 'MB101', 'MB201', 'MJ14', 'MJ24'].map(id => ({ key: `SINYAL_${id}_MSG-CCR`, category: 'PERAGA SINYAL', categoryDisplay: 'PERAGA SINYAL', id, loc: 'MSG-CCR', period: 'BULANAN', target: 1 })),
+  ...['J10', 'J12', 'J14', 'J20', 'J22A', 'J22B', 'J24', 'UJ12', 'UJ22B'].map(id => ({ key: `SINYAL_${id}_MSG`, category: 'PERAGA SINYAL', categoryDisplay: 'PERAGA SINYAL', id, loc: 'MSG', period: 'BULANAN', target: 1 })),
+  ...['B101', 'B102', 'B205', 'B206', 'B207', 'UB101', 'UB102', 'UB205', 'UB206'].map(id => ({ key: `SINYAL_${id}_BJD-CLT`, category: 'PERAGA SINYAL', categoryDisplay: 'PERAGA SINYAL', id, loc: 'BJD-CLT', period: 'BULANAN', target: 1 })),
   ...[
     'B101', 'B102', 'B103', 'B104', 'B105', 'B106', 'B107', 'B108', 'B109', 'B110', 'B111', 'B112',
-    'B201', 'B202', 'B203', 'B204', 'B205', 'B206', 'B207', 'B208', 'B209', 'B210', 'B211', 'B212', 'B213',
-    'MJ14', 'MJ20',
+    'B201', 'B202', 'B203', 'B204', 'B205', 'B206', 'B207', 'B208', 'B209', 'B210', 'B211', 'B212', 'B213', 'B214',
     'UB102', 'UB103', 'UB104', 'UB105', 'UB106', 'UB110',
     'UB202', 'UB206', 'UB207', 'UB208', 'UB209', 'UB210', 'UB211', 'UB212'
   ].map(id => ({ key: `SINYAL_${id}_CLT-BOO`, category: 'PERAGA SINYAL', categoryDisplay: 'PERAGA SINYAL', id, loc: 'CLT-BOO', period: 'BULANAN', target: 1 })),
-  ...['B101', 'B201', 'MB101', 'MB201', 'MJ10', 'MJ14', 'MJ20', 'MJ24'].map(id => ({ key: `SINYAL_${id}_BTT-MSG`, category: 'PERAGA SINYAL', categoryDisplay: 'PERAGA SINYAL', id, loc: 'BTT-MSG', period: 'BULANAN', target: 1 })),
-  ...['B101', 'B201', 'MB101', 'MB201', 'MJ14', 'MJ24'].map(id => ({ key: `SINYAL_${id}_MSG-CCR`, category: 'PERAGA SINYAL', categoryDisplay: 'PERAGA SINYAL', id, loc: 'MSG-CCR', period: 'BULANAN', target: 1 })),
 
   // =========================================================================
   // 4. DETEKSI KA (AXLE COUNTER) — Kode BPBYE7 (Bulanan -> Target: 1 file)
+  // Total 139 Unit
   // =========================================================================
   ...[
     'ZP 10A', 'ZP 10B', 'ZP 12A', 'ZP 12B', 'ZP 13', 'ZP 20A', 'ZP 20B', 'ZP 20C',
@@ -87,30 +115,29 @@ export const MASTER_ASSETS = [
   ].map(id => ({ key: `AXL_${id}_BOO`, category: 'AXLE COUNTER', categoryDisplay: 'DETEKSI KA (AXLE COUNTER)', id, loc: 'BOO', period: 'BULANAN', target: 1 })),
 
   ...['ZP 10A', 'ZP 10B', 'ZP 11', 'ZP 12A', 'ZP 12B', 'ZP 13', 'ZP 14A', 'ZP 14B', 'ZP 20A', 'ZP 20B', 'ZP 22A', 'ZP 22B', 'ZP 24A', 'ZP 24B'].map(id => ({ key: `AXL_${id}_CLT`, category: 'AXLE COUNTER', categoryDisplay: 'DETEKSI KA (AXLE COUNTER)', id, loc: 'CLT', period: 'BULANAN', target: 1 })),
-  ...['ZP 10A', 'ZP 10B', 'ZP 12A', 'ZP 12B', 'ZP 14A', 'ZP 14B', 'ZP 20A', 'ZP 20B', 'ZP 22A', 'ZP 22B', 'ZP 24A', 'ZP 24B'].map(id => ({ key: `AXL_${id}_BTT`, category: 'AXLE COUNTER', categoryDisplay: 'DETEKSI KA (AXLE COUNTER)', id, loc: 'BTT', period: 'BULANAN', target: 1 })),
+  ...['ZP 10B', 'ZP 12A', 'ZP 12B', 'ZP 14A', 'ZP 20B', 'ZP 22A', 'ZP 22B', 'ZP 24A'].map(id => ({ key: `AXL_${id}_BTT`, category: 'AXLE COUNTER', categoryDisplay: 'DETEKSI KA (AXLE COUNTER)', id, loc: 'BTT', period: 'BULANAN', target: 1 })),
   ...[
-    'ZP 25', 'ZP 26A', 'ZP 26B', 'ZP 26C', 'ZP 27A', 'ZP 27B', 'ZP 27C', 'ZP 28A', 'ZP 28B', 'ZP 28C',
-    'ZP 46A', 'ZP 46B', 'ZP 47A', 'ZP 47B', 'ZP 47C', 'ZP 47D', 'ZP 48A', 'ZP 48B', 'ZP 48C', 'ZP 66A', 'ZP 66B', 'ZP 68'
+    'ZP 25', 'ZP 26A', 'ZP 26B', 'ZP 26C', 'ZP 27A', 'ZP 27B', 'ZP 27C', 'ZP 28A', 'ZP 28B',
+    'ZP 46A', 'ZP 46B', 'ZP 47A', 'ZP 47B', 'ZP 47C', 'ZP 47D', 'ZP 48A', 'ZP 48B', 'ZP 66A', 'ZP 66B', 'ZP 68'
   ].map(id => ({ key: `AXL_${id}_BOP`, category: 'AXLE COUNTER', categoryDisplay: 'DETEKSI KA (AXLE COUNTER)', id, loc: 'BOP', period: 'BULANAN', target: 1 })),
+  ...['ZP 10A', 'ZP 20A'].map(id => ({ key: `AXL_${id}_BTT-BOP`, category: 'AXLE COUNTER', categoryDisplay: 'DETEKSI KA (AXLE COUNTER)', id, loc: 'BTT-BOP', period: 'BULANAN', target: 1 })),
+  ...['ZP 28C', 'ZP 48C'].map(id => ({ key: `AXL_${id}_BOP-BTT`, category: 'AXLE COUNTER', categoryDisplay: 'DETEKSI KA (AXLE COUNTER)', id, loc: 'BOP-BTT', period: 'BULANAN', target: 1 })),
   ...[
-    'ZP 10A', 'ZP 10B', 'ZP 10C', 'ZP 11', 'ZP 12A', 'ZP 12B', 'ZP 13', 'ZP 14A', 'ZP 14B', 'ZP 14C',
-    'ZP 20A', 'ZP 20B', 'ZP 20C', 'ZP 22A', 'ZP 22B', 'ZP 24A', 'ZP 24B', 'ZP 24C'
+    'ZP 10B', 'ZP 10C', 'ZP 11', 'ZP 12A', 'ZP 12B', 'ZP 13', 'ZP 14A', 'ZP 14B',
+    'ZP 20B', 'ZP 20C', 'ZP 22A', 'ZP 22B', 'ZP 24A', 'ZP 24B'
   ].map(id => ({ key: `AXL_${id}_MSG`, category: 'AXLE COUNTER', categoryDisplay: 'DETEKSI KA (AXLE COUNTER)', id, loc: 'MSG', period: 'BULANAN', target: 1 })),
-  ...['ZP 101A', 'ZP 101B', 'ZP 201A', 'ZP 201B'].map(id => ({ key: `AXL_${id}_CGB`, category: 'AXLE COUNTER', categoryDisplay: 'DETEKSI KA (AXLE COUNTER)', id, loc: 'CGB', period: 'BULANAN', target: 1 })),
-  ...['ZP 101A', 'ZP 101B', 'ZP 201A', 'ZP 201B'].map(id => ({ key: `AXL_${id}_COS`, category: 'AXLE COUNTER', categoryDisplay: 'DETEKSI KA (AXLE COUNTER)', id, loc: 'COS', period: 'BULANAN', target: 1 })),
+  ...['ZP 101A', 'ZP 101B', 'ZP 201A', 'ZP 201B', 'ZP 10A', 'ZP 20A', 'ZP 14B', 'ZP 24B'].map(id => ({ key: `AXL_${id}_BTT-MSG`, category: 'AXLE COUNTER', categoryDisplay: 'DETEKSI KA (AXLE COUNTER)', id, loc: 'BTT-MSG', period: 'BULANAN', target: 1 })),
+  ...['ZP 101A', 'ZP 101B', 'ZP 201A', 'ZP 201B', 'ZP 14C', 'ZP 24C'].map(id => ({ key: `AXL_${id}_MSG-CCR`, category: 'AXLE COUNTER', categoryDisplay: 'DETEKSI KA (AXLE COUNTER)', id, loc: 'MSG-CCR', period: 'BULANAN', target: 1 })),
   ...['ZP 101', 'ZP 102', 'ZP 205', 'ZP 206', 'ZP 207'].map(id => ({ key: `AXL_${id}_BJD-CLT`, category: 'AXLE COUNTER', categoryDisplay: 'DETEKSI KA (AXLE COUNTER)', id, loc: 'BJD-CLT', period: 'BULANAN', target: 1 })),
   ...[
     'ZP 101', 'ZP 102', 'ZP 103', 'ZP 104', 'ZP 105', 'ZP 106', 'ZP 107', 'ZP 108', 'ZP 109', 'ZP 110', 'ZP 111', 'ZP 112',
     'ZP 201', 'ZP 202', 'ZP 203', 'ZP 204', 'ZP 205', 'ZP 206', 'ZP 207', 'ZP 208', 'ZP 209', 'ZP 210', 'ZP 211', 'ZP 212', 'ZP 213'
   ].map(id => ({ key: `AXL_${id}_CLT-BOO`, category: 'AXLE COUNTER', categoryDisplay: 'DETEKSI KA (AXLE COUNTER)', id, loc: 'CLT-BOO', period: 'BULANAN', target: 1 })),
-  ...['ZP 10A', 'ZP 101A', 'ZP 101B', 'ZP 201A', 'ZP 201B', 'ZP 14B', 'ZP 20A'].map(id => ({ key: `AXL_${id}_BTT-MSG`, category: 'AXLE COUNTER', categoryDisplay: 'DETEKSI KA (AXLE COUNTER)', id, loc: 'BTT-MSG', period: 'BULANAN', target: 1 })),
-  ...['ZP 101A', 'ZP 101B', 'ZP 201A', 'ZP 201B', 'ZP 14C', 'ZP 24C'].map(id => ({ key: `AXL_${id}_MSG-CCR`, category: 'AXLE COUNTER', categoryDisplay: 'DETEKSI KA (AXLE COUNTER)', id, loc: 'MSG-CCR', period: 'BULANAN', target: 1 })),
-  ...['ZP 10A', 'ZP 20A', 'ZP 28C', 'ZP 48C'].map(id => ({ key: `AXL_${id}_BOP-BTT`, category: 'AXLE COUNTER', categoryDisplay: 'DETEKSI KA (AXLE COUNTER)', id, loc: 'BOP-BTT', period: 'BULANAN', target: 1 })),
 
   // =========================================================================
   // 5. PINTU PERLINTASAN (JPL) — Kode BPBKS17 (Target: 10 file)
   // =========================================================================
-  { key: 'JPL_02_BOO', category: 'PINTU PERLINTASAN', categoryDisplay: 'PINTU PERLINTASAN (JPL)', id: 'JPL 02', loc: 'BOO', period: 'BULANAN', target: 1 },
+  { key: 'JPL_2_BOO', category: 'PINTU PERLINTASAN', categoryDisplay: 'PINTU PERLINTASAN (JPL)', id: 'JPL 2', loc: 'BOO', period: 'BULANAN', target: 1 },
   { key: 'JPL_04_BOP', category: 'PINTU PERLINTASAN', categoryDisplay: 'PINTU PERLINTASAN (JPL)', id: 'JPL 04', loc: 'BOP', period: 'BULANAN', target: 1 },
   { key: 'JPL_07_BOP-BTT', category: 'PINTU PERLINTASAN', categoryDisplay: 'PINTU PERLINTASAN (JPL)', id: 'JPL 07', loc: 'BOP-BTT', period: 'BULANAN', target: 1 },
   { key: 'JPL_BNR_BOP-BTT', category: 'PINTU PERLINTASAN', categoryDisplay: 'PINTU PERLINTASAN (JPL)', id: 'JPL BNR', loc: 'BOP-BTT', period: 'BULANAN', target: 1 },
@@ -122,7 +149,7 @@ export const MASTER_ASSETS = [
   { key: 'JPL_28_CLT-BOO', category: 'PINTU PERLINTASAN', categoryDisplay: 'PINTU PERLINTASAN (JPL)', id: 'JPL 28', loc: 'CLT-BOO', period: 'BULANAN', target: 1 },
 
   // =========================================================================
-  // 6. TELKOM PINTU PERLINTASAN (PTPP) — Kode BPBKS17 (Target: 11 file)
+  // 6. TELKOM PINTU PERLINTASAN (PTPP) (11 unit)
   // =========================================================================
   { key: 'PTPP_01_BOO', category: 'PTPP', categoryDisplay: 'TELKOM JPL (PTPP)', id: 'PTPP JPL 01', loc: 'BOO', period: 'BULANAN', target: 1 },
   { key: 'PTPP_02_BOO', category: 'PTPP', categoryDisplay: 'TELKOM JPL (PTPP)', id: 'PTPP JPL 02', loc: 'BOO', period: 'BULANAN', target: 1 },
@@ -137,7 +164,7 @@ export const MASTER_ASSETS = [
   { key: 'PTPP_28_CLT-BOO', category: 'PTPP', categoryDisplay: 'TELKOM JPL (PTPP)', id: 'PTPP JPL 28', loc: 'CLT-BOO', period: 'BULANAN', target: 1 },
 
   // =========================================================================
-  // 7. CATU DAYA — Kode BPBYE8 (Target: 9 file)
+  // 7. CATU DAYA / RECTIFIER (9 unit)
   // =========================================================================
   { key: 'CATUDAYA_CLT', category: 'CATU DAYA', categoryDisplay: 'CATU DAYA / RECTIFIER', id: 'CATU DAYA', loc: 'CLT', period: 'BULANAN', target: 1 },
   { key: 'CATUDAYA_BOO_1', category: 'CATU DAYA', categoryDisplay: 'CATU DAYA / RECTIFIER', id: 'CATU DAYA ER SINYAL', loc: 'BOO', period: 'BULANAN', target: 1 },
@@ -150,41 +177,59 @@ export const MASTER_ASSETS = [
   { key: 'CATUDAYA_CGB', category: 'CATU DAYA', categoryDisplay: 'CATU DAYA / RECTIFIER', id: 'CATU DAYA', loc: 'CGB', period: 'BULANAN', target: 1 },
 
   // =========================================================================
-  // 8. SERAT OPTIK (OTB) — Kode BPBKF4 (Target: 22 file)
+  // 8. OPTIK OTB (22 unit)
   // =========================================================================
-  ...['BOO', 'CLT', 'BTT', 'BOP', 'COS', 'MSG', 'CGB'].map(loc => ({ key: `SO_SINYAL_${loc}`, category: 'SERAT OPTIK', categoryDisplay: 'SERAT OPTIK (OTB)', id: 'ER SINYAL', loc, period: 'BULANAN', target: 1 })),
-  ...['BOO', 'BTT', 'COS', 'MSG', 'CGB'].map(loc => ({ key: `SO_TELKOM_${loc}`, category: 'SERAT OPTIK', categoryDisplay: 'SERAT OPTIK (OTB)', id: 'ER TELKOM', loc, period: 'BULANAN', target: 1 })),
-  { key: 'SO_RADIO_BOO', category: 'SERAT OPTIK', categoryDisplay: 'SERAT OPTIK (OTB)', id: 'ER RADIO', loc: 'BOO', period: 'BULANAN', target: 1 },
-  ...['BJD-CLT', 'CLT-BOO', 'BOP-BTT'].flatMap(loc => [
-    { key: `SO_BULANAN_1_${loc}`, category: 'SERAT OPTIK', categoryDisplay: 'SERAT OPTIK (OTB)', id: 'PETAK 1', loc, period: 'BULANAN', target: 1 },
-    { key: `SO_BULANAN_2_${loc}`, category: 'SERAT OPTIK', categoryDisplay: 'SERAT OPTIK (OTB)', id: 'PETAK 2', loc, period: 'BULANAN', target: 1 },
-  ]),
-  ...['BOO', 'CLT', 'BOP', 'BTT'].map(loc => ({ key: `SO_OTB_EXTRA_${loc}`, category: 'SERAT OPTIK', categoryDisplay: 'SERAT OPTIK (OTB)', id: 'OTB', loc, period: 'BULANAN', target: 1 })),
+  ...['CLT_1', 'CLT_2'].map((_, i) => ({ key: `SO_CLT_${i+1}`, category: 'SERAT OPTIK', categoryDisplay: 'SERAT OPTIK (OTB)', id: `OTB ${i+1}`, loc: 'CLT', period: 'BULANAN', target: 1 })),
+  ...['CLT-BOO_1', 'CLT-BOO_2'].map((_, i) => ({ key: `SO_CLT-BOO_${i+1}`, category: 'SERAT OPTIK', categoryDisplay: 'SERAT OPTIK (OTB)', id: `OTB ${i+1}`, loc: 'CLT-BOO', period: 'BULANAN', target: 1 })),
+  ...['BOO_1', 'BOO_2', 'BOO_3', 'BOO_4'].map((_, i) => ({ key: `SO_BOO_${i+1}`, category: 'SERAT OPTIK', categoryDisplay: 'SERAT OPTIK (OTB)', id: `OTB ${i+1}`, loc: 'BOO', period: 'BULANAN', target: 1 })),
+  { key: 'SO_BOP_1', category: 'SERAT OPTIK', categoryDisplay: 'SERAT OPTIK (OTB)', id: 'OTB 1', loc: 'BOP', period: 'BULANAN', target: 1 },
+  ...['BOP-BTT_1', 'BOP-BTT_2'].map((_, i) => ({ key: `SO_BOP-BTT_${i+1}`, category: 'SERAT OPTIK', categoryDisplay: 'SERAT OPTIK (OTB)', id: `OTB ${i+1}`, loc: 'BOP-BTT', period: 'BULANAN', target: 1 })),
+  ...['BTT_1', 'BTT_2', 'BTT_3'].map((_, i) => ({ key: `SO_BTT_${i+1}`, category: 'SERAT OPTIK', categoryDisplay: 'SERAT OPTIK (OTB)', id: `OTB ${i+1}`, loc: 'BTT', period: 'BULANAN', target: 1 })),
+  ...['COS_1', 'COS_2'].map((_, i) => ({ key: `SO_COS_${i+1}`, category: 'SERAT OPTIK', categoryDisplay: 'SERAT OPTIK (OTB)', id: `OTB ${i+1}`, loc: 'COS', period: 'BULANAN', target: 1 })),
+  ...['MSG_1', 'MSG_2'].map((_, i) => ({ key: `SO_MSG_${i+1}`, category: 'SERAT OPTIK', categoryDisplay: 'SERAT OPTIK (OTB)', id: `OTB ${i+1}`, loc: 'MSG', period: 'BULANAN', target: 1 })),
+  ...['CGB_1', 'CGB_2', 'CGB_3', 'CGB_4'].map((_, i) => ({ key: `SO_CGB_${i+1}`, category: 'SERAT OPTIK', categoryDisplay: 'SERAT OPTIK (OTB)', id: `OTB ${i+1}`, loc: 'CGB', period: 'BULANAN', target: 1 })),
 
   // =========================================================================
-  // 9. PERALATAN DALAM (PDSE) — Kode BPBYE2 (Target: 7 file)
+  // 9. PDSE (PERALATAN DALAM) — Kode BPBYE5 (Bulanan -> Target: 1 file)
   // =========================================================================
-  ...['CLT', 'BOO', 'BOP', 'BTT', 'COS', 'MSG', 'CGB'].map(loc => ({ key: `PDSE_${loc}`, category: 'PDSE', categoryDisplay: 'PERALATAN DALAM (PDSE)', id: 'PDSE', loc, period: 'BULANAN', target: 1 })),
+  ...['CLT', 'BOO', 'BOP', 'BTT', 'COS', 'MSG', 'CGB'].map(loc => ({
+    key: `PDSE_${loc}`,
+    category: 'PDSE',
+    categoryDisplay: 'PERALATAN DALAM (PDSE)',
+    id: 'PDSE',
+    loc,
+    period: 'BULANAN',
+    target: 1
+  })),
 
   // =========================================================================
-  // 10. TELEKOMUNIKASI DI STASIUN (PTDS) — Kode BPBKS15 (Target: 6 file)
+  // 10. PTDS (TELEKOMUNIKASI STASIUN) (Bulanan -> Target: 1 file, BOO: 2 file)
   // =========================================================================
-  ...['CLT', 'BOO', 'BOP', 'BTT', 'MSG', 'CGB'].map(loc => ({ key: `PTDS_${loc}`, category: 'PTDS', categoryDisplay: 'TELKOM STASIUN (PTDS)', id: 'PTDS', loc, period: 'BULANAN', target: 1 })),
+  { key: 'PTDS_BOO', category: 'PTDS', categoryDisplay: 'TELKOM STASIUN (PTDS)', id: 'PTDS', loc: 'BOO', period: 'BULANAN', target: 2 },
+  ...['CLT', 'BOP', 'BTT', 'COS', 'MSG', 'CGB'].map(loc => ({
+    key: `PTDS_${loc}`,
+    category: 'PTDS',
+    categoryDisplay: 'TELKOM STASIUN (PTDS)',
+    id: 'PTDS',
+    loc,
+    period: 'BULANAN',
+    target: 1
+  })),
 
   // =========================================================================
-  // 11. TELEKOMUNIKASI LUAR STASIUN (PTLS) — Kode BPBKS16 (Target: 8 file)
+  // 11. PTLS (TELEKOMUNIKASI LUAR STASIUN) (Bulanan -> Total 8 file)
   // =========================================================================
   { key: 'PTLS_BOO_1', category: 'PTLS', categoryDisplay: 'TELKOM LUAR STASIUN (PTLS)', id: 'PTLS 1', loc: 'BOO', period: 'BULANAN', target: 1 },
   { key: 'PTLS_BOO_2', category: 'PTLS', categoryDisplay: 'TELKOM LUAR STASIUN (PTLS)', id: 'PTLS 2', loc: 'BOO', period: 'BULANAN', target: 1 },
+  { key: 'PTLS_BOP', category: 'PTLS', categoryDisplay: 'TELKOM LUAR STASIUN (PTLS)', id: 'PTLS', loc: 'BOP', period: 'BULANAN', target: 1 },
   { key: 'PTLS_BTT', category: 'PTLS', categoryDisplay: 'TELKOM LUAR STASIUN (PTLS)', id: 'PTLS', loc: 'BTT', period: 'BULANAN', target: 1 },
   { key: 'PTLS_COS', category: 'PTLS', categoryDisplay: 'TELKOM LUAR STASIUN (PTLS)', id: 'PTLS', loc: 'COS', period: 'BULANAN', target: 1 },
   { key: 'PTLS_MSG_1', category: 'PTLS', categoryDisplay: 'TELKOM LUAR STASIUN (PTLS)', id: 'PTLS 1', loc: 'MSG', period: 'BULANAN', target: 1 },
   { key: 'PTLS_MSG_2', category: 'PTLS', categoryDisplay: 'TELKOM LUAR STASIUN (PTLS)', id: 'PTLS 2', loc: 'MSG', period: 'BULANAN', target: 1 },
   { key: 'PTLS_CGB', category: 'PTLS', categoryDisplay: 'TELKOM LUAR STASIUN (PTLS)', id: 'PTLS', loc: 'CGB', period: 'BULANAN', target: 1 },
-  { key: 'PTLS_BOP', category: 'PTLS', categoryDisplay: 'TELKOM LUAR STASIUN (PTLS)', id: 'PTLS', loc: 'BOP', period: 'BULANAN', target: 1 },
 
   // =========================================================================
-  // 12. CTC / CTS — Kode BPBYE4 (Target: 2 file)
+  // 12. CTC / CTS (Bulanan -> Target: 2 file)
   // =========================================================================
   { key: 'CTC_CLT', category: 'CTC-CTS', categoryDisplay: 'CTC / CTS', id: 'CTS', loc: 'CLT', period: 'BULANAN', target: 1 },
   { key: 'CTC_BOO', category: 'CTC-CTS', categoryDisplay: 'CTC / CTS', id: 'CTS', loc: 'BOO', period: 'BULANAN', target: 1 },
@@ -258,7 +303,8 @@ export function extractLocFromText(text) {
  */
 export function matchFileToAsset(filename) {
   if (!filename || typeof filename !== 'string') return null;
-  const base = filename.replace(/\.pdf$/i, '').trim();
+  // Hapus ekstensi dan penanda duplikat (2), (3) jika ada
+  const base = filename.replace(/\s*\(\d+\)\.pdf$/i, '').replace(/\.pdf$/i, '').trim();
 
   const m = base.match(/^(?:PERAWATAN|PEMERIKSAAN)\s+(.*?)(?:\s+\d{2}-\d{2}-\d{4})?$/i);
   const s = (m ? m[1] : base).trim().toUpperCase();
@@ -273,13 +319,13 @@ export function matchFileToAsset(filename) {
   }
 
   // 2. RADIO WAYSTATION (3 Bulanan)
-  if (s.includes('RADIO WAYSTATION') || s.includes('WAYSTATION') || is3Bulanan) {
+  if (s.includes('RADIO WAYSTATION') || (s.includes('WAYSTATION') && !s.includes('BASESTATION'))) {
     const loc = extractLocFromText(s);
     return { category: 'RADIO WAYSTATION', id: `WS ${loc}`, loc, period: '3_BULANAN' };
   }
 
   // 3. RADIO BASESTATION (6 Bulanan)
-  if (s.includes('BASESTATION') || s.includes('BASE STATION') || is6Bulanan) {
+  if (s.includes('BASESTATION') || s.includes('BASE STATION')) {
     const loc = extractLocFromText(s);
     return { category: 'RADIO BASESTATION', id: `BS ${loc}`, loc, period: '6_BULANAN' };
   }
@@ -317,6 +363,7 @@ export function matchFileToAsset(filename) {
     const loc = extractLocFromText(s);
     let id = 'OTB';
     if (s.includes('ER RADIO')) id = 'ER RADIO';
+    else if (s.includes('RUANG RADIO')) id = 'RUANG RADIO';
     else if (s.includes('ER TELKOM')) id = 'ER TELKOM';
     else if (s.includes('ER SINYAL')) id = 'ER SINYAL';
     else if (loc.includes('-')) id = 'PETAK';
@@ -327,7 +374,10 @@ export function matchFileToAsset(filename) {
   if (s.includes('SINYAL') && !s.includes('CATU DAYA')) {
     const loc = extractLocFromText(s);
     const mSig = s.match(/^SINYAL\s+(?:MUKA\s+)?([A-Z0-9.]+)/i);
-    const sigId = mSig ? mSig[1].replace(/\./g, '').toUpperCase() : '';
+    let sigId = mSig ? mSig[1].replace(/\./g, '').toUpperCase() : '';
+    if (['BOO', 'CLT', 'BTT', 'BOP', 'COS', 'MSG', 'CGB', 'CCR', 'BJD'].includes(sigId)) {
+      sigId = '';
+    }
     return { category: 'PERAGA SINYAL', id: sigId, loc, period: 'BULANAN' };
   }
 
@@ -398,6 +448,7 @@ export function performAssetAudit(files, periodFilter = 'BULANAN') {
   });
 
   const unmatchedFiles = [];
+  const DESCRIPTIVE_CATEGORIES = new Set(['PDSE', 'PTDS', 'PTLS', 'CATU DAYA', 'SERAT OPTIK', 'CTC-CTS']);
 
   for (const fname of fileNames) {
     const matched = matchFileToAsset(fname);
@@ -408,21 +459,55 @@ export function performAssetAudit(files, periodFilter = 'BULANAN') {
 
     let matchedKey = null;
 
+    // Helper ID matcher: persis sama atau normalisasi format tanpa spasi/leading zeros
+    const idMatches = (masterId, fileId) => {
+      if (!masterId || !fileId) return false;
+      if (masterId.toUpperCase().trim() === fileId.toUpperCase().trim()) return true;
+      const mNorm = masterId.toUpperCase().replace(/\s+/g, '').replace(/^JPL0*/i, 'JPL').replace(/^PTPP0*/i, 'PTPP');
+      const fNorm = fileId.toUpperCase().replace(/\s+/g, '').replace(/^JPL0*/i, 'JPL').replace(/^PTPP0*/i, 'PTPP');
+      return mNorm === fNorm;
+    };
+
     // 1. Exact match (category + id + loc)
     for (const [key, a] of assetMap.entries()) {
-      if (a.category === matched.category && a.loc === matched.loc) {
-        if (matched.id && a.id && (a.id === matched.id || a.id.replace(/\s+/g, '') === matched.id.replace(/\s+/g, ''))) {
+      if (a.category === matched.category && normalizeSectionLoc(a.loc) === normalizeSectionLoc(matched.loc)) {
+        if (idMatches(a.id, matched.id)) {
           matchedKey = key;
           break;
         }
       }
     }
 
-    // 2. Lokasi match untuk aset deskriptif (PDSE, PTDS, PTLS, Catu Daya, Serat Optik)
-    if (!matchedKey) {
+    // 2. Cross-location match untuk aset spesifik ber-ID (B214 di CLT-BOO cocok ke B214 di BOO-CLT/BOO/CLT)
+    if (!matchedKey && matched.id && !DESCRIPTIVE_CATEGORIES.has(matched.category)) {
       for (const [key, a] of assetMap.entries()) {
-        if (a.category === matched.category && a.loc === matched.loc) {
-          // Cari slot yang belum penuh jika ada beberapa target
+        if (a.category === matched.category && idMatches(a.id, matched.id)) {
+          if (locsOverlap(a.loc, matched.loc)) {
+            matchedKey = key;
+            break;
+          }
+        }
+      }
+    }
+
+    // 3. Unique ID di kategori aset master
+    if (!matchedKey && matched.id && !DESCRIPTIVE_CATEGORIES.has(matched.category)) {
+      const candidates = [];
+      for (const [key, a] of assetMap.entries()) {
+        if (a.category === matched.category && idMatches(a.id, matched.id)) {
+          candidates.push(key);
+        }
+      }
+      if (candidates.length === 1) {
+        matchedKey = candidates[0];
+      }
+    }
+
+    // 4. Lokasi match untuk aset deskriptif (PDSE, PTDS, PTLS, Catu Daya, Serat Optik)
+    if (!matchedKey && DESCRIPTIVE_CATEGORIES.has(matched.category)) {
+      // 4a. Prioritas 1: Lokasi eksak
+      for (const [key, a] of assetMap.entries()) {
+        if (a.category === matched.category && normalizeSectionLoc(a.loc) === normalizeSectionLoc(matched.loc)) {
           if (a.found < a.target) {
             matchedKey = key;
             break;
@@ -431,10 +516,23 @@ export function performAssetAudit(files, periodFilter = 'BULANAN') {
           }
         }
       }
+      // 4b. Prioritas 2: Overlapping location
+      if (!matchedKey) {
+        for (const [key, a] of assetMap.entries()) {
+          if (a.category === matched.category && locsOverlap(a.loc, matched.loc)) {
+            if (a.found < a.target) {
+              matchedKey = key;
+              break;
+            } else if (!matchedKey) {
+              matchedKey = key;
+            }
+          }
+        }
+      }
     }
 
-    // 3. Fallback jika lokasi UNKNOWN
-    if (!matchedKey && matched.loc === 'UNKNOWN') {
+    // 5. Fallback UNKNOWN location untuk aset deskriptif
+    if (!matchedKey && matched.loc === 'UNKNOWN' && DESCRIPTIVE_CATEGORIES.has(matched.category)) {
       for (const [key, a] of assetMap.entries()) {
         if (a.category === matched.category) {
           if (a.found < a.target) {

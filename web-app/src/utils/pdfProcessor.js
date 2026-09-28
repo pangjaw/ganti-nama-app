@@ -123,6 +123,70 @@ async function ocrViaPython(pdfBuffer) {
 }
 
 /**
+ * Hitung SHA-256 hash dari ArrayBuffer menggunakan Web Crypto API,
+ * dengan fallback FNV-1a 64-bit jika Web Crypto tidak tersedia.
+ * @param {ArrayBuffer} arrayBuffer
+ * @returns {Promise<string>}
+ */
+export async function computeSha256(arrayBuffer) {
+  try {
+    if (typeof window !== 'undefined' && window.crypto && window.crypto.subtle) {
+      const hashBuf = await window.crypto.subtle.digest('SHA-256', arrayBuffer);
+      return Array.from(new Uint8Array(hashBuf))
+        .map(b => b.toString(16).padStart(2, '0'))
+        .join('');
+    }
+  } catch (e) {
+    // fallback jika Web Crypto subtle digest gagal
+  }
+  const bytes = new Uint8Array(arrayBuffer);
+  let h1 = 0x811c9dc5;
+  let h2 = 0x9e3779b9;
+  for (let i = 0; i < bytes.length; i++) {
+    h1 = Math.imul(h1 ^ bytes[i], 0x01000193);
+    h2 = Math.imul(h2 ^ bytes[i], 0x27d4eb2d);
+  }
+  return (h1 >>> 0).toString(16) + (h2 >>> 0).toString(16) + '_' + bytes.length;
+}
+
+/**
+ * Ekstrak layer teks digital langsung dari PDF (halaman 1) via PDF.js.
+ * @param {ArrayBuffer} arrayBuffer
+ * @returns {Promise<string>}
+ */
+export async function extractDigitalText(arrayBuffer) {
+  try {
+    const pdf = await pdfjs.getDocument({ data: arrayBuffer.slice(0) }).promise;
+    const page = await pdf.getPage(1);
+    const content = await page.getTextContent();
+    if (!content || !content.items || content.items.length === 0) {
+      return '';
+    }
+    let lines = [];
+    let currentLine = '';
+    let lastY = null;
+    for (const item of content.items) {
+      const y = item.transform ? Math.round(item.transform[5]) : null;
+      if (lastY !== null && y !== null && Math.abs(y - lastY) > 3) {
+        if (currentLine.trim()) lines.push(currentLine.trim());
+        currentLine = '';
+      }
+      currentLine += (currentLine ? ' ' : '') + item.str;
+      lastY = y;
+      if (item.hasEOL) {
+        if (currentLine.trim()) lines.push(currentLine.trim());
+        currentLine = '';
+        lastY = null;
+      }
+    }
+    if (currentLine.trim()) lines.push(currentLine.trim());
+    return lines.join('\n').toUpperCase();
+  } catch (e) {
+    return '';
+  }
+}
+
+/**
  * Process a single PDF file: render → OCR (JS, fallback Python) → detect → build new name.
  * @param {File} file
  * @param {Function} detectFn
@@ -135,16 +199,26 @@ export async function processSingleFile(file, detectFn) {
   }
 
   try {
-    const arrayBuffer = await file.arrayBuffer();
-    const canvas = await renderPage1(arrayBuffer);
+    const arrayBuffer = file._arrayBuffer || await file.arrayBuffer();
 
-    // Prioritaskan Python OCR (Tesseract desktop — jauh lebih akurat)
-    // Fallback ke Tesseract.js jika Python tidak tersedia
-    let textCrop = await ocrViaPython(arrayBuffer);
+    // 1. Prioritaskan ekstraksi digital text layer langsung (jauh lebih cepat & 100% akurat)
+    let textCrop = '';
+    const digText = await extractDigitalText(arrayBuffer);
+    if (digText && digText.length >= 40 && (
+      digText.includes('PERAWATAN') || digText.includes('PEMERIKSAAN') || digText.includes('STE') || digText.includes('RESOR')
+    )) {
+      textCrop = digText;
+    }
+
+    // 2. Fallback ke OCR jika digital text tidak tersedia (file PDF hasil scan gambar)
     if (!textCrop.trim()) {
-      textCrop = await ocrCanvas(canvas);
+      textCrop = await ocrViaPython(arrayBuffer);
       if (!textCrop.trim()) {
-        console.log(`[OCR] Both OCR failed for "${fname}"`);
+        const canvas = await renderPage1(arrayBuffer);
+        textCrop = await ocrCanvas(canvas);
+        if (!textCrop.trim()) {
+          console.log(`[OCR] Both OCR failed for "${fname}"`);
+        }
       }
     }
     let textFlat = textCrop.replace(/\s+/g, ' ');

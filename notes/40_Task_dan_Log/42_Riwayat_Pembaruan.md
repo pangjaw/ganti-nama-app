@@ -111,5 +111,130 @@ Berikut adalah riwayat tahapan pembuatan dan penyempurnaan aplikasi Sintelis Uti
 * **PDSE/PTDS/PTLS → DISETUJUI**:
   * OCR gagal + filename fallback tidak punya keyword PDSE/PTDS/PTLS.
   * Fix: 3 branch fallback baru di `filenameDetect` + filter `NOISE_WORDS` di `extractFuncloc`.
-* **Fix Validasi**: Semua 4 bugs fixed, build ulang `SintelisUtility.exe`.
 * Lihat [[46_Temuan_dan_Fix_Batch_5|detail lengkap di note Batch 5]].
+
+---
+
+### 📊 Tahap 12 — Audit & Monitoring Kelengkapan Aset Resor (2 September 2026)
+* **Perubahan**:
+  * Pembuatan database referensi lengkap aset Resor 1.21 BOO tahun 2026 (`masterAssets.js`).
+  * Target Rutin Bulanan resmi 398 file (Wesel 62, Point Lock 2, Sinyal 125, Axle Counter 139, JPL 10, PTPP 11, Catu Daya 9, Serat Optik 22, PDSE 7, PTDS 6, PTLS 8, CTC/CTS 2).
+  * Target berkala khusus: Radio Waystation 3-Bulanan (9 stasiun), Radio Basestation 6-Bulanan (5 lokasi), Sistem Waystation 1-Tahunan (1 stasiun).
+  * Komponen UI terpadu di Menu 1 (`AssetAuditPanel.jsx`): Dual-source (hasil rename vs folder komputer lokal), filter status (Kurang Saja / Lengkap), pencarian instan, dan ekspor laporan resmi Excel 3 sheet.
+
+---
+
+### 🚀 Tahap 13 — Downloader P3-STE Robustness, Multi-Akun, & Retry System (7 September 2026)
+* **Perubahan**:
+  * **Penyimpanan Akun Persisten**: Akun NIPP & Password login tersimpan di backend disk (`sintelis_accounts.json`), tahan restart aplikasi.
+  * **Tombol Hentikan Proses Global**: Menghentikan browser Playwright, thread download, dan proses OCR Menu 1 secara serentak.
+  * **Penomoran File Duplikat**: Mengatasi nama kembar dari server P3-STE dengan suffix urut ` (2)`, ` (3)`, dst. tanpa menimpa file yang sudah ada.
+  * **Auto-Retry HTTP 500 & Sweep Queue**: Mengatasi kegagalan pembuatan PDF di server P3-STE dengan 4x retry berturut-turut + putaran kedua (sweep retry) di akhir sesi sehingga 100% file terunduh lengkap.
+  * **Optimasi 100 Data/Halaman & Resilient Pagination**: Mengubah tampilan default tabel dari 10 menjadi 100 baris per halaman (memangkas navigasi halaman dari 20 ke 2 halaman saja), menaikkan timeout transisi AJAX ke 50 detik, deteksi status processing server, dan auto-reclick tombol Next untuk memastikan semua data (seperti 197 file) terunduh tanpa macet di tengah jalan.
+  * **Perbaikan Progress Bar**: Deteksi total data otomatis dari DataTables dan animasi real-time akurat.
+* Lihat [[47_Temuan_dan_Fix_Batch_6|detail lengkap di note Batch 6]].
+
+---
+
+### 🎯 Tahap 14 — Penyelarasan Audit Aset & Perbaikan Batch 6.1 (7 September 2026)
+* **Perubahan**:
+  * **Penyelarasan Audit Aset Otentik**: Menyelaraskan nomor ID master aset di `masterAssets.js` dengan nomor otentik pada form/dokumen tanpa mutasi fuzzy (`B214` dipetakan ke petak `CLT-BOO`, `JPL 2` dari `JPL 02`, `J12` MSG dari `J12B`, target `PTDS BOO` disesuaikan 2 checklist).
+  * **Normalisasi File Duplikat pada Audit**: `matchFileToAsset()` otomatis membersihkan akhiran counter `\s*\(\d+\)\.pdf$` agar file kembar tetap terpetakan ke slot aset master.
+  * **Pencegahan Slot Stealing**: Kategori ber-ID unik (`WESEL`, `POINT LOCK`, `PERAGA SINYAL`, `AXLE COUNTER`, `PINTU PERLINTASAN`, `PTPP`) wajib cocok ID terlebih dahulu sebelum lokasi.
+  * **Perbaikan Deteksi OCR 5 Kasus**:
+    1. Serat Optik JPL BNR dikunci ke `BOP-BTT` dan dihentikan sebelum teks tabel `ITEM PERAWATAN` agar tidak terbaca `JPL 7A`.
+    2. PTPP JPL 04 dikunci ke `BOP`.
+    3. PTLS BOO memprioritaskan kode stasiun dari baris aset (`BOO`) dan mendukung penomoran duplikat `(2)` di `App.jsx`.
+    4. PTDS BOO mendukung format `Lokasi\n:\nBogor` dan fallback baris aset.
+    5. Peraga sinyal mendukung multi-line `SINYAL MUKA\n...` dan normalisasi spasi nama petak (`BOP - BTT` -> `BOP-BTT`).
+* Lihat [[47_Temuan_dan_Fix_Batch_6|detail lengkap di note Batch 6]].
+
+---
+
+### 🚀 Tahap 15 — Perbaikan Deskripsi Majemuk Sinyal & Native Excel Save Dialog (7 September 2026)
+* **Perubahan**:
+  * **Regex Sinyal Majemuk**: Mengakomodasi frasa majemuk pada formulir checklist seperti `SINYAL KELUAR DAN LANGSIR` (`JL22A`, `JL42A`, `JL62B`) dan `SINYAL ULANG JALAN` (`UJ26B`, `UJ12`, `UJ22B`) tanpa memotong atau gagal membaca ID aset. Format penamaan tetap baku murni `PERAWATAN SINYAL <ID> <LOKASI> <TGL>.pdf`.
+  * **Native Excel Save Dialog**: Mengganti modul `tkinter` di `run_desktop_webview.py` dengan API resmi `webview.windows[0].create_file_dialog(webview.FileDialog.SAVE, ...)` sehingga jendela Windows resmi "Save As" langsung muncul di layar saat mengekspor laporan audit kelengkapan aset.
+  * **Penyelarasan 125 Sinyal SAP**: Menghapus 10 duplikat phantom sinyal muka di stasiun BTT, BOP, dan MSG pada `masterAssets.js` sehingga target tepat 125 unit dan tidak menimbulkan false-positive "KURANG 1".
+* Lihat [[47_Temuan_dan_Fix_Batch_6|detail lengkap di note Batch 6]].
+
+---
+
+### 🔍 Tahap 16 — Penyelarasan Audit Axle Counter Petak BTT-BOP & BTT-MSG (7 September 2026)
+* **Perubahan**:
+  * **Eliminasi 4 Slot Phantom Axle Counter**: Menghapus duplikasi `ZP 10A` & `ZP 20A` di stasiun `BTT` dan `MSG` pada `masterAssets.js`.
+  * **Penetapan Lokasi Petak Otentik**: Menempatkan `ZP 10A` & `ZP 20A` pada petak `BTT-BOP` dan `BTT-MSG` sesuai fisik baris aset dokumen kantor. Total unit Axle Counter kini tepat **139 unit** (100% presisi SAP).
+  * **Sinkronisasi `ZP_WHITELIST` di `detector.js`**: Menambahkan petak jalan bebas `BTT-BOP`, `BOP-BTT`, `BTT-MSG`, dan `MSG-CCR` ke daftar verifikasi deteksi.
+  * **Hasil Audit Sempurna**: Seluruh 139 unit Axle Counter pada folder Agustus 2026 terverifikasi 100% LENGKAP tanpa false-positive `KURANG 1`.
+* Lihat [[47_Temuan_dan_Fix_Batch_6|detail lengkap di note Batch 6]].
+
+---
+
+### 🔧 Tahap 17 — Perbaikan Deteksi ZP 14B & Penyelarasan ZP 24B Petak BTT-MSG (7 September 2026)
+* **Perubahan**:
+  * **Perbaikan Whitelist `detector.js`**: Mendaftarkan `ZP 14B` dan `ZP 24B` pada `ZP_WHITELIST["BTT-MSG"]` dan `ZP_WHITELIST["MSG-BTT"]` sehingga checklist `Batutulis-Maseng.pdf` mengekstrak kedua file lengkap tanpa didrop.
+  * **Penyelarasan Master Aset `masterAssets.js`**: Memindahkan `ZP 14B` dan `ZP 24B` dari stasiun tunggal `BTT` (kini murni 8 unit stasiun BTT) ke petak `BTT-MSG`.
+  * **Total Unit Axle Counter**: Tetap tepat **139 unit** (100% presisi SAP).
+  * **Hasil Verifikasi**: File `PERAWATAN AXLE COUNTER ZP 14B BTT-MSG 11-08-2026.pdf` dan `PERAWATAN AXLE COUNTER ZP 24B MSG-BTT 11-08-2026.pdf` keduanya terbuat dan lolos audit 100%.
+* Lihat [[47_Temuan_dan_Fix_Batch_6|detail lengkap di note Batch 6]].
+
+---
+
+### 🛡️ Tahap 18 — Eliminator Duplikat Otomatis Dual-Check (Level 1 Biner & Level 2 Signature Dokumen) (8 September 2026)
+* **Perubahan**:
+  * **Level 1 — Pre-OCR Fast Binary Deduplication**: Menghitung hash SHA-256 byte biner (`arrayBuffer`) sebelum OCR dimulai. File duplikat biner (hasil unduh berulang dengan sufiks nama `(1)`, `(2)`, dsb.) langsung dilewati (skip) seketika, menghemat puluhan detik proses OCR dan beban memori/CPU.
+  * **Level 2 — Post-OCR Content Signature Deduplication**: Mendeteksi file PDF yang memiliki perbedaan byte biner (misal karena timestamp metadata/trailer ID yang berbeda saat unduhan terpisah), namun memiliki isi fisik formulir checklist dan peralatan yang 100% sama. File duplikat isi langsung dilewati dari daftar hasil penamaan.
+  * **Perlindungan Lembar Sah Multi-Sheet**: Lembar formulir berbeda pada kategori dan stasiun yang sama (seperti *Wesel Bogor Lembar 1 vs Lembar 2*, *Catu Daya Lembar 1 vs Lembar 2*, atau *Serat Optik*) memiliki teks checklist dan aset yang berbeda, sehingga keduanya tetap diproses sah dan file kedua secara otomatis diberi penomoran ` (2)` tanpa konflik.
+  * **Operasi 100% Otomatis**: Berjalan otomatis di latar belakang tanpa memerlukan tombol/intervensi manual pengguna.
+  * **Log Informatif**: Menampilkan log `[DUPLIKAT DILEWATI]` berwarna khusus di konsol dan ringkasan jumlah duplikat yang dieliminasi pada akhir proses.
+* Lihat [[47_Temuan_dan_Fix_Batch_6|detail lengkap di note Batch 6]].
+
+---
+
+### 🌐 Tahap 19 — Sinkronisasi Tanggal Tabel Web P3-STE Downloader (8 September 2026)
+* **Perubahan**:
+  * **Penyebab**: Server P3-STE memiliki bug pada fungsi ekspor PDF (`tcpdf`) di mana file unduhan dinamai dengan tanggal yang keliru (misal `02-08-2026` padahal di tabel web tercatat `02/07/2026` pada filter bulan Juli).
+  * **Koreksi Otomatis Downloader**: Engine Playwright di `run_desktop_webview.py` kini membaca kolom `Tanggal` dari baris tabel web (`#table tbody tr`). Jika nama file dari server membawa tanggal yang berbeda, prefix tanggal otomatis diganti dengan tanggal resmi tabel web (`02-08-2026_...` $\rightarrow$ `02-07-2026_...`).
+  * **Koreksi File Folder 7. JULI**: 12 file sumber di `7. JULI` dan 34 file rename di folder `Rename` telah diperbarui ke tanggal yang sah `02-07-2026`.
+* Lihat [[47_Temuan_dan_Fix_Batch_6|detail lengkap di note Batch 6]].
+
+---
+
+### 🎯 Tahap 20 — Penyempurnaan 8 Aset Kurang Audit Kelengkapan Juli (8 September 2026)
+* **Perubahan**:
+  * **Sinyal Maseng Multiline OCR**: Regex `sinyalRowRx` di `detector.js` diperluas untuk mengenali baris yang diawali langsung dengan deskripsi `SINYAL MASUK/KELUAR/MUKA/ULANG` meskipun baris kode `SIN...` terpisah oleh OCR. Sinyal `J10`, `J14`, `J20`, `J24`, dan `J22A` Maseng semuanya terdeteksi lengkap.
+  * **Multi-Aset PINTU & PTPP**: Menghapus pemangkasan paksa `assets = [assets[0]]` pada branch PINTU dan PTPP di `detector.js`. Seluruh aset pada formulir gabungan (`JPL 07` & `JPL BNR BOP-BTT`, serta `JPL 27` & `JPL 28 CLT-BOO`) dipertahankan dan ter-rename masing-masing.
+  * **Pembersihan Simbol Tabel PTLS (`getPtlsLoc`)**: Menghilangkan karakter batas tabel seperti `| ` sebelum mencocokkan baris `TRA/TLK`, sehingga `TRA10131 : MULTIPLEX BOO` terdeteksi tepat sebagai stasiun `BOO` dan menghasilkan `PERAWATAN PTLS BOO 27-07-2026 (2).pdf` yang melengkapi `PTLS 2 BOO`.
+  * **Hasil Audit Sempurna**: Audit kelengkapan seluruh 405 aset resor pada bulan Juli 2026 kini mencapai **100% LENGKAP** (405 target, 425 ditemukan, **0 KURANG**).
+* Lihat [[47_Temuan_dan_Fix_Batch_6|detail lengkap di note Batch 6]].
+
+---
+
+### 🚀 Tahap 21 — Penyelarasan Total File Tersimpan & Akselerasi Simpan Konkuren (10 September 2026)
+* **Perubahan**:
+  * **Penyelarasan 426 File Tersimpan**: Menyelaraskan 2 file yang sempat belum tersimpan (`PERAWATAN WESEL W21 MSG 06-07-2026.pdf` dan `PERAWATAN SERAT OPTIK JPL 26N CLT 17-07-2026.pdf`) sehingga jumlah fisik di folder `7. JULI\Rename` pas **426 file** sesuai hasil deteksi aplikasi.
+  * **Akselerasi Simpan Paralel (Chunk Concurrency)**: Menyimpan 426 file sebelumnya membutuhkan waktu ~2 menit secara sekuensial. Sekarang ditingkatkan menjadi pemrosesan paralel (`SAVE_CONCURRENCY = 6`) sehingga waktu simpan berkurang menjadi hanya **~10-15 detik** (10x lebih cepat).
+  * **Progress Bar & Dynamic Button Label**: Menambahkan tracking progres real-time (`setProgress`) pada fungsi simpan dan label tombol dinamis: `Menyimpan (X/426)...`.
+  * **Guard Cegah Klik Ganda**: Menambahkan proteksi `if (!results.length || processing) return;` dan atribut `disabled={processing}` pada tombol simpan dan ekspor.
+  * **Logging File Simpan Backend**: Menambahkan pencatatan `Saved: {clean_filename}` pada backend Python untuk transparansi penuh di file log.
+* Lihat [[47_Temuan_dan_Fix_Batch_6|detail lengkap di note Batch 6]].
+
+---
+
+### 🛡️ Tahap 22 — Perbaikan Deteksi Multi-JPL (JPL 7 & BNR) & Relaksasi Binary Deduplication (11 September 2026)
+* **Perubahan**:
+  * **Parser Multi-JPL Nama File (`extractJplsFromFilename`)**: Menambahkan fungsi ekstraksi cerdas di `detector.js` yang mampu mengenali pola multi-JPL pada nama file (`JPL 7&BNR`, `JPL 7 & BNR`, `JPL 15, JPL 16`, `JPL ELEKTRIK BNR`), serta menormalisasi angka 1 digit menjadi 2 digit (`7` $\rightarrow$ `07`).
+  * **Preservasi Multi-Aset OCR di PINTU & PTPP**: Menghapus penimpaan tunggal `assets = [ocrMatch]`. Jika file sumber P3STE mencakup dua JPL (seperti `JPL 07` dan `JPL BNR` di lintas BOP-BTT) atau nama file memuat gabungan `7&BNR`, seluruh aset hasil deteksi dipertahankan sehingga otomatis terpecah menjadi 2 file mandiri.
+  * **Regex Global OTB FO di Serat Optik**: Mengubah pencarian baris TRA OTB FO JPL di `detector.js` menggunakan regex global `/(?:TRA\d+\s*[:|;.]*\s*)?OTB\s+FO\s+JPL\s+([A-Z0-9]+)/gi`, sehingga item kedua (`BNR`) tidak lagi terlewat meski berada pada satu baris teks dokumen.
+  * **Relaksasi Level 1 Fast Binary Deduplication di `App.jsx`**:
+    * Menambahkan fungsi `isCopyOrDownloadDuplicate(nameA, nameB)`.
+    * Level 1 kini secara cerdas **hanya melewati file biner identik jika nama dasarnya terindikasi duplikat unduhan** (akhiran `(1)`, `(2)`, `- Copy`, `_1`).
+    * File dengan nama substantif berbeda (seperti `...JPL 07...` dan `...JPL ELEKTRIK BNR...` yang sengaja disiapkan pengguna untuk 2 aset) **tidak lagi diblokir sebelum OCR**, melainkan diproses mandiri.
+    * Level 2 (Post-OCR Signature Check) tetap aktif sebagai pengaman untuk menyaring file duplikat sejati jika isi checklist dan asetnya identik.
+  * **Hasil Verifikasi**:
+    * File raw `25-02-2026_PERAWATAN PERALATAN PINTU PERLINTASAN 1 BULANAN_JPL 7&BNR Bogor-Batutulis.pdf` langsung menghasilkan 2 file: `JPL 07` dan `JPL BNR`.
+    * File raw `25-02-2026_PERAWATAN PERALATAN TELEKOMUNIKASI DI PINTU PERLINTASAN 1 BULANAN_JPL 7&BNR Bogor-Batutulis.pdf` langsung menghasilkan 2 file: `JPL 07` dan `JPL BNR`.
+    * File raw `25-02-2026_PERAWATAN SERAT OPTIK 1 BULANAN_JPL 7&BNR Bogor.pdf` langsung menghasilkan 2 file: `JPL 07` dan `JPL BNR`.
+    * Batch folder `SIAP DI OCR` yang memuat kedua file terpisah (`JPL 07` dan `JPL ELEKTRIK BNR`) berhasil memproses dan menghasilkan kedua file secara mandiri tanpa tereliminasi.
+    * File checklist normal (1 aset, 99% populasi dokumen) tetap berjalan 100% stabil dan menghasilkan 1 file per dokumen.
+* Lihat [[47_Temuan_dan_Fix_Batch_6|detail lengkap di note Batch 6]].

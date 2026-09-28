@@ -257,6 +257,7 @@ so_er_assets.sort(key=lambda x: x[5])  # sort by first_otb
 | 2 | `RADIO` di filename -> `ER TELKOM` | `"TELKOM" or "RADIO"` selalu true | Deteksi terpisah per keyword |
 | 3 | `OTB 1-144 ER SINYAL BTT` padahal tanpa nomor | `\bOTB\s+(\d+)\b` menangkap `ODF/OTB 144` | `(?<!ODF/)` negative lookbehind |
 | 4 | `OTB 72 ER TELKOM BTT` padahal tanpa nomor | Sama seperti atas | Sama |
+| 5 | `OTB FO RUANG RADIO BOO` (file 2025) -> jatuh ke SO Bulanan biasa tanpa OTB | Tidak ada kata "ER", regex hanya cek ER | Tambah `RUANG RADIO`, `OTB FO RUANG RADIO`, strip prefix OTB |
 
 ---
 

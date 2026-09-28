@@ -327,10 +327,10 @@ export default function P3STEDownloader({ onSendToOCR, onStopAllProcesses }) {
             setLogs(status.logs.map(l => ({ type: l.type || 'info', msg: l.msg, ts: l.ts || '' })));
           }
 
-          if (status.total > 0) {
-            const pct = Math.round((status.current / status.total) * 100);
-            setProgress({ current: status.current, total: status.total, percentage: pct });
-          }
+          const cur = status.current || 0;
+          const tot = status.total || 0;
+          const pct = tot > 0 ? Math.min(100, Math.round((cur / tot) * 100)) : 0;
+          setProgress({ current: cur, total: tot, percentage: pct });
 
           if (status.downloaded_files) {
             setDownloadedFiles(status.downloaded_files);
@@ -662,16 +662,24 @@ export default function P3STEDownloader({ onSendToOCR, onStopAllProcesses }) {
           <div className="progress-section">
             <div className="progress-label-row">
               <span>Progres Download:</span>
-              <span className="progress-pct">{progress.percentage}%</span>
+              <span className="progress-pct">
+                {progress.total > 0
+                  ? `${progress.percentage}%`
+                  : (progress.current > 0 ? `${progress.current} file` : '0%')}
+              </span>
             </div>
             <div className="progress-bar-bg">
               <div
-                className="progress-bar-fill"
-                style={{ width: `${progress.percentage}%` }}
+                className={`progress-bar-fill ${progress.total === 0 && isDownloading ? 'indeterminate' : ''}`}
+                style={{ width: `${progress.total > 0 ? progress.percentage : (progress.current > 0 ? 100 : 0)}%` }}
               />
             </div>
             <div className="progress-subtext">
-              Terunduh: <strong>{progress.current}</strong> dari <strong>{progress.total}</strong> file
+              {progress.total > 0 ? (
+                <>Terunduh / Terproses: <strong>{progress.current}</strong> dari <strong>{progress.total}</strong> file ({progress.percentage}%)</>
+              ) : (
+                <>Terunduh / Terproses: <strong>{progress.current}</strong> file {isDownloading && <span style={{ opacity: 0.7 }}>(menghitung total data...)</span>}</>
+              )}
             </div>
           </div>
 

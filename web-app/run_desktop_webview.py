@@ -137,6 +137,61 @@ def _cancel_all_processes():
             _log(f"Notice closing browser context: {e}")
         _current_playwright_context = None
 
+def _get_unique_p3ste_filename(target_folder, filename, existing_names=None):
+    """
+    Menghasilkan nama file unik dengan menambahkan (2), (3), dst. jika nama file sudah ada
+    di target_folder atau sudah digunakan dalam sesi pengunduhan saat ini.
+    Contoh:
+    checklist.pdf -> checklist.pdf (jika belum ada)
+    checklist.pdf -> checklist (2).pdf (jika sudah ada)
+    checklist.pdf -> checklist (3).pdf (jika checklist (2).pdf sudah ada)
+    """
+    clean_fn = re.sub(r'[<>:"/\\|?*]', '_', filename).strip()
+    base, ext = os.path.splitext(clean_fn)
+    if not ext:
+        ext = ".pdf"
+
+    m = re.search(r'^(.*?)\s*\((\d+)\)$', base)
+    if m:
+        base_clean = m.group(1).strip()
+        counter = int(m.group(2))
+    else:
+        base_clean = base
+        counter = 1
+
+    candidate_fn = f"{base}{ext}"
+    candidate_path = os.path.join(target_folder, candidate_fn)
+
+    while os.path.exists(candidate_path) or (existing_names and candidate_fn in existing_names):
+        counter += 1
+        candidate_fn = f"{base_clean} ({counter}){ext}"
+        candidate_path = os.path.join(target_folder, candidate_fn)
+
+    return candidate_fn, candidate_path
+
+def _correct_filename_date(filename, table_date):
+    """
+    Jika tanggal di nama file dari server berbeda dengan tanggal resmi di kolom tabel web P3-STE,
+    ganti prefix tanggal nama file dengan tanggal dari tabel web.
+    Contoh: '02-08-2026_PERAWATAN...pdf' -> '02-07-2026_PERAWATAN...pdf'
+    """
+    if not table_date or not re.match(r'^\d{2}-\d{2}-\d{4}$', table_date):
+        return filename, None
+    
+    # Cek apakah nama file diawali format DD-MM-YYYY
+    m = re.match(r'^(\d{2}-\d{2}-\d{4})(_.*\.pdf)$', filename, re.IGNORECASE)
+    if m:
+        server_date = m.group(1)
+        suffix = m.group(2)
+        if server_date != table_date:
+            corrected_fn = f"{table_date}{suffix}"
+            return corrected_fn, server_date
+    elif filename.lower().startswith("checklist_"):
+        # Jika server tidak mengembalikan tanggal sama sekali
+        return f"{table_date}_{filename}", None
+        
+    return filename, None
+
 def _parse_curl_header_cookies(curl_cmd):
     """Parse headers and cookies from cURL string (mendukung bash, cmd, powershell, case-insensitive)."""
     headers = {
@@ -242,6 +297,7 @@ def _run_p3ste_download_task(nipp, password, awal, akhir, type_val, target_folde
                     _add_p3ste_log("info", f"Mode Unduh Langsung ID: {s_id} s.d. {e_id} (Total {total_ids} target)...")
                     _p3ste_state["total"] = total_ids
                     os.makedirs(target_folder, exist_ok=True)
+                    session_filenames = set()
                     
                     for current_id in range(s_id, e_id + 1):
                         if _p3ste_state["cancelled"]:
@@ -252,34 +308,55 @@ def _run_p3ste_download_task(nipp, password, awal, akhir, type_val, target_folde
                         _p3ste_state["current"] = total_downloaded
                         pdf_url = f"https://p3-ste.kai.id/cetak_checklist/report/{type_name}/exports/pdf/{current_id}?false"
                         fn = f"checklist_{current_id}.pdf"
-                        out_path = os.path.join(target_folder, fn)
                         
                         _add_p3ste_log("info", f"[{current_id}] Mencoba unduh checklist ID {current_id}...")
                         
-                        try:
-                            fresp = session.get(pdf_url, timeout=25)
-                            if fresp.status_code == 200 and fresp.content[:4] == b"%PDF":
-                                cd = fresp.headers.get("Content-Disposition", "")
-                                if "filename=" in cd:
-                                    cd_fn = re.search(r'filename=["\']?([^"\';]+)["\']?', cd)
-                                    if cd_fn:
-                                        fn = cd_fn.group(1)
-                                        out_path = os.path.join(target_folder, fn)
+                        download_success = False
+                        last_err = ""
+                        max_attempts = 3
+                        for attempt in range(max_attempts):
+                            if _p3ste_state["cancelled"]: break
+                            try:
+                                fresp = session.get(pdf_url, timeout=30)
+                                if fresp.status_code == 200 and fresp.content[:4] == b"%PDF":
+                                    cd = fresp.headers.get("Content-Disposition", "")
+                                    if "filename=" in cd:
+                                        cd_fn = re.search(r'filename=["\']?([^"\';]+)["\']?', cd)
+                                        if cd_fn:
+                                            fn = cd_fn.group(1).strip().strip('"').strip("'")
 
-                                with open(out_path, "wb") as pf:
-                                    pf.write(fresp.content)
+                                    fn, out_path = _get_unique_p3ste_filename(target_folder, fn, session_filenames)
 
-                                file_size = len(fresp.content)
-                                _p3ste_state["downloaded_files"].append({
-                                    "name": fn,
-                                    "path": out_path,
-                                    "size": file_size
-                                })
-                                _add_p3ste_log("success", f"✓ Tersimpan: {fn} ({file_size // 1024} KB)")
-                            else:
-                                _add_p3ste_log("warn", f"- ID {current_id}: Kosong / Bukan PDF valid (HTTP {fresp.status_code})")
-                        except Exception as fe:
-                            _add_p3ste_log("error", f"✗ ID {current_id} Error: {fe}")
+                                    with open(out_path, "wb") as pf:
+                                        pf.write(fresp.content)
+
+                                    file_size = len(fresp.content)
+                                    session_filenames.add(fn)
+                                    _p3ste_state["downloaded_files"].append({
+                                        "name": fn,
+                                        "path": out_path,
+                                        "size": file_size
+                                    })
+                                    retry_tag = f" (coba ulang ke-{attempt})" if attempt > 0 else ""
+                                    _add_p3ste_log("success", f"✓ Tersimpan: {fn} ({file_size // 1024} KB){retry_tag}")
+                                    download_success = True
+                                    break
+                                elif fresp.status_code in (500, 502, 503, 504, 429):
+                                    last_err = f"HTTP {fresp.status_code}"
+                                    if attempt < max_attempts - 1:
+                                        time.sleep(1.5 * (attempt + 1))
+                                        continue
+                                else:
+                                    last_err = f"HTTP {fresp.status_code}"
+                                    break
+                            except Exception as fe:
+                                last_err = str(fe)
+                                if attempt < max_attempts - 1:
+                                    time.sleep(1.5 * (attempt + 1))
+                                    continue
+
+                        if not download_success and not _p3ste_state["cancelled"]:
+                            _add_p3ste_log("error", f"✗ ID {current_id} Gagal: {last_err}")
 
                         time.sleep(0.15)
 
@@ -553,7 +630,7 @@ def _run_p3ste_download_task(nipp, password, awal, akhir, type_val, target_folde
                     break
 
             if not initial_ready:
-                _add_p3ste_log("warn", "Data awal belum terdeteksi. Mencoba melanjutkan ke tahap pengubahan 100 data...")
+                _add_p3ste_log("warn", "Data awal belum terdeteksi. Mencoba melanjutkan...")
 
             page.wait_for_timeout(2000)
 
@@ -566,19 +643,48 @@ def _run_p3ste_download_task(nipp, password, awal, akhir, type_val, target_folde
             except Exception as se_err:
                 _add_p3ste_log("warn", f"Notice sinkronisasi cookie: {se_err}")
 
-            # Diagnostik status tabel
-            page_diag = _safe_evaluate(page, """() => {
+            # Diagnostik status tabel & Deteksi Total Data Target
+            page_diag = _safe_evaluate(page, r"""() => {
+                let total = 0;
+                try {
+                    if (typeof $ !== 'undefined' && $.fn && $.fn.DataTable) {
+                        const tbls = Array.from(document.querySelectorAll('table'));
+                        for (const t of tbls) {
+                            if ($.fn.DataTable.isDataTable(t)) {
+                                const info = $(t).DataTable().page.info();
+                                if (info && info.recordsDisplay > 0) total = info.recordsDisplay;
+                                else if (info && info.recordsTotal > 0) total = info.recordsTotal;
+                                if (total > 0) break;
+                            }
+                        }
+                    }
+                } catch (e) {}
+
                 const infoEl = document.querySelector('.dataTables_info, #table_info, [id*="_info"]');
+                const infoText = infoEl ? infoEl.innerText : null;
+                if (!total && infoText) {
+                    const m = infoText.match(/(?:dari|of)\s+([\d.,]+)/i);
+                    if (m) {
+                        total = parseInt(m[1].replace(/[.,]/g, ''), 10) || 0;
+                    }
+                }
+
                 const rows = document.querySelectorAll('#table tbody tr, table tbody tr');
                 const emptyEl = document.querySelector('.dataTables_empty');
                 return {
-                    info: infoEl ? infoEl.innerText : null,
+                    info: infoText,
+                    total: total,
                     rowCount: (!emptyEl && rows.length > 0) ? rows.length : 0
                 };
             }""") or {}
             
             if page_diag.get("info"):
                 _add_p3ste_log("info", f"Status Tabel: {page_diag['info']}")
+
+            detected_total = page_diag.get("total", 0)
+            if detected_total > 0:
+                _p3ste_state["total"] = detected_total
+                _add_p3ste_log("info", f"📊 Terdeteksi target total: {detected_total} file checklist.")
 
             os.makedirs(target_folder, exist_ok=True)
             checkpoint_file = os.path.join(target_folder, ".p3ste_checkpoint.json")
@@ -596,6 +702,8 @@ def _run_p3ste_download_task(nipp, password, awal, akhir, type_val, target_folde
             page_index = 1
             total_downloaded = 0
             downloaded_ids = set()
+            session_filenames = set()
+            failed_queue = []
 
             while True:
                 if _p3ste_state["cancelled"]:
@@ -627,6 +735,19 @@ def _run_p3ste_download_task(nipp, password, awal, akhir, type_val, target_folde
                 pdf_items = _safe_evaluate(page, r"""(typeName) => {
                     const items = [];
                     const seen = new Set();
+
+                    function extractRowDate(tr) {
+                        if (!tr) return '';
+                        const tds = tr.querySelectorAll('td');
+                        for (let i = 0; i < Math.min(tds.length, 4); i++) {
+                            const txt = (tds[i].innerText || '').trim();
+                            const dm = txt.match(/(\d{2})[/-](\d{2})[/-](\d{4})/);
+                            if (dm) {
+                                return `${dm[1]}-${dm[2]}-${dm[3]}`;
+                            }
+                        }
+                        return '';
+                    }
                     
                     // 1. Ekstrak dari link atau button cetak
                     const els = document.querySelectorAll('#table tbody tr a, #table tbody tr button, #table tbody tr [onclick], table tbody tr a, table tbody tr button');
@@ -638,17 +759,21 @@ def _run_p3ste_download_task(nipp, password, awal, akhir, type_val, target_folde
                         const combined = `${href} ${onclick} ${dataUrl} ${dataId}`;
                         
                         const m = combined.match(/exports\/pdf\/(\d{4,8})/i) || combined.match(/checklist.*?(\d{5,8})/i) || onclick.match(/['"](\d{5,8})['"]/);
+                        let fid = null;
                         if (m) {
-                            const fid = m[1];
-                            if (!seen.has(fid)) {
-                                seen.add(fid);
-                                items.push({ id: fid, url: `https://p3-ste.kai.id/cetak_checklist/report/${typeName}/exports/pdf/${fid}?false` });
-                            }
+                            fid = m[1];
                         } else if (/^\d{5,8}$/.test(dataId)) {
-                            if (!seen.has(dataId)) {
-                                seen.add(dataId);
-                                items.push({ id: dataId, url: `https://p3-ste.kai.id/cetak_checklist/report/${typeName}/exports/pdf/${dataId}?false` });
-                            }
+                            fid = dataId;
+                        }
+
+                        if (fid && !seen.has(fid)) {
+                            seen.add(fid);
+                            const rowDate = extractRowDate(el.closest('tr'));
+                            items.push({
+                                id: fid,
+                                url: `https://p3-ste.kai.id/cetak_checklist/report/${typeName}/exports/pdf/${fid}?false`,
+                                date: rowDate
+                            });
                         }
                     });
                     
@@ -660,7 +785,12 @@ def _run_p3ste_download_task(nipp, password, awal, akhir, type_val, target_folde
                             const m = txt.match(/\b(\d{6,8})\b/);
                             if (m && !seen.has(m[1])) {
                                 seen.add(m[1]);
-                                items.push({ id: m[1], url: `https://p3-ste.kai.id/cetak_checklist/report/${typeName}/exports/pdf/${m[1]}?false` });
+                                const rowDate = extractRowDate(tr);
+                                items.push({
+                                    id: m[1],
+                                    url: `https://p3-ste.kai.id/cetak_checklist/report/${typeName}/exports/pdf/${m[1]}?false`,
+                                    date: rowDate
+                                });
                             }
                         });
                     }
@@ -673,8 +803,77 @@ def _run_p3ste_download_task(nipp, password, awal, akhir, type_val, target_folde
                 _add_p3ste_log("info", f"Halaman {page_index}: Ditemukan {len(new_page_pdfs)} file PDF.")
 
                 if len(new_page_pdfs) == 0:
-                    _add_p3ste_log("info", "Tidak ada file PDF baru pada halaman ini. Selesai.")
-                    break
+                    # Beri kesempatan sekali lagi jika target data belum tercapai
+                    if _p3ste_state["total"] > 0 and total_downloaded < _p3ste_state["total"]:
+                        page.wait_for_timeout(2500)
+                        pdf_items_retry = _safe_evaluate(page, r"""(typeName) => {
+                            const items = [];
+                            const seen = new Set();
+
+                            function extractRowDate(tr) {
+                                if (!tr) return '';
+                                const tds = tr.querySelectorAll('td');
+                                for (let i = 0; i < Math.min(tds.length, 4); i++) {
+                                    const txt = (tds[i].innerText || '').trim();
+                                    const dm = txt.match(/(\d{2})[/-](\d{2})[/-](\d{4})/);
+                                    if (dm) {
+                                        return `${dm[1]}-${dm[2]}-${dm[3]}`;
+                                    }
+                                }
+                                return '';
+                            }
+
+                            const els = document.querySelectorAll('#table tbody tr a, #table tbody tr button, #table tbody tr [onclick], table tbody tr a, table tbody tr button');
+                            els.forEach(el => {
+                                const href = el.getAttribute('href') || '';
+                                const onclick = el.getAttribute('onclick') || '';
+                                const dataUrl = el.getAttribute('data-url') || el.getAttribute('data-href') || '';
+                                const dataId = el.getAttribute('data-id') || '';
+                                const combined = `${href} ${onclick} ${dataUrl} ${dataId}`;
+                                
+                                const m = combined.match(/exports\/pdf\/(\d{4,8})/i) || combined.match(/checklist.*?(\d{5,8})/i) || onclick.match(/['"](\d{5,8})['"]/);
+                                let fid = null;
+                                if (m) {
+                                    fid = m[1];
+                                } else if (/^\d{5,8}$/.test(dataId)) {
+                                    fid = dataId;
+                                }
+
+                                if (fid && !seen.has(fid)) {
+                                    seen.add(fid);
+                                    const rowDate = extractRowDate(el.closest('tr'));
+                                    items.push({
+                                        id: fid,
+                                        url: `https://p3-ste.kai.id/cetak_checklist/report/${typeName}/exports/pdf/${fid}?false`,
+                                        date: rowDate
+                                    });
+                                }
+                            });
+                            if (items.length === 0) {
+                                document.querySelectorAll('#table tbody tr, table tbody tr').forEach(tr => {
+                                    if (tr.querySelector('.dataTables_empty')) return;
+                                    const txt = tr.innerText || '';
+                                    const m = txt.match(/\b(\d{6,8})\b/);
+                                    if (m && !seen.has(m[1])) {
+                                        seen.add(m[1]);
+                                        const rowDate = extractRowDate(tr);
+                                        items.push({
+                                            id: m[1],
+                                            url: `https://p3-ste.kai.id/cetak_checklist/report/${typeName}/exports/pdf/${m[1]}?false`,
+                                            date: rowDate
+                                        });
+                                    }
+                                });
+                            }
+                            return items;
+                        }""", type_name) or []
+                        new_page_pdfs = [item for item in pdf_items_retry if item["id"] not in downloaded_ids]
+                        if len(new_page_pdfs) > 0:
+                            _add_p3ste_log("info", f"Halaman {page_index} (Retry): Ditemukan {len(new_page_pdfs)} file PDF.")
+
+                    if len(new_page_pdfs) == 0:
+                        _add_p3ste_log("info", "Tidak ada file PDF baru pada halaman ini. Selesai.")
+                        break
 
                 for item in new_page_pdfs:
                     if _p3ste_state["cancelled"]: break
@@ -690,20 +889,21 @@ def _run_p3ste_download_task(nipp, password, awal, akhir, type_val, target_folde
                     if cached_entry:
                         c_name = cached_entry.get("name", f"checklist_{fid}.pdf")
                         c_path = os.path.join(target_folder, c_name)
-                        if os.path.isfile(c_path) and os.path.getsize(c_path) > 1000:
+                        if c_name not in session_filenames and os.path.isfile(c_path) and os.path.getsize(c_path) > 1000:
                             fsize = os.path.getsize(c_path)
                             _p3ste_state["downloaded_files"].append({
                                 "name": c_name,
                                 "path": c_path,
                                 "size": fsize
                             })
+                            session_filenames.add(c_name)
                             _add_p3ste_log("info", f"⏭️ [{total_downloaded}] {c_name} (Sudah ada, dilewati)")
                             continue
 
                     # 2. Cek apakah file fisik checklist_{fid}.pdf sudah ada di folder
                     default_fn = f"checklist_{fid}.pdf"
                     default_path = os.path.join(target_folder, default_fn)
-                    if os.path.isfile(default_path) and os.path.getsize(default_path) > 1000:
+                    if default_fn not in session_filenames and os.path.isfile(default_path) and os.path.getsize(default_path) > 1000:
                         fsize = os.path.getsize(default_path)
                         checkpoint_data[str(fid)] = {"name": default_fn, "size": fsize}
                         _p3ste_state["downloaded_files"].append({
@@ -711,111 +911,260 @@ def _run_p3ste_download_task(nipp, password, awal, akhir, type_val, target_folde
                             "path": default_path,
                             "size": fsize
                         })
+                        session_filenames.add(default_fn)
                         _add_p3ste_log("info", f"⏭️ [{total_downloaded}] {default_fn} (Sudah ada di folder, dilewati)")
                         continue
 
-                    # Unduh via context.request
+                    # Unduh via context.request dengan Retry Otomatis
                     fn = default_fn
-                    out_path = default_path
-                    try:
-                        fresp = context.request.get(pdf_url, timeout=30000)
-                        if fresp.status == 200:
-                            body = fresp.body()
-                            if body[:4] == b"%PDF":
-                                cd = fresp.headers.get("content-disposition", "")
-                                if "filename=" in cd:
-                                    cd_fn = re.search(r'filename=["\']?([^"\';]+)["\']?', cd)
-                                    if cd_fn:
-                                        fn = cd_fn.group(1).strip().strip('"').strip("'")
-                                        out_path = os.path.join(target_folder, fn)
+                    download_success = False
+                    last_err = ""
+                    max_attempts = 4
 
-                                with open(out_path, "wb") as pf:
-                                    pf.write(body)
+                    for attempt in range(max_attempts):
+                        if _p3ste_state["cancelled"]: break
+                        try:
+                            fresp = context.request.get(pdf_url, timeout=35000)
+                            if fresp.status == 200:
+                                body = fresp.body()
+                                if body[:4] == b"%PDF":
+                                    cd = fresp.headers.get("content-disposition", "")
+                                    if "filename=" in cd:
+                                        cd_fn = re.search(r'filename=["\']?([^"\';]+)["\']?', cd)
+                                        if cd_fn:
+                                            fn = cd_fn.group(1).strip().strip('"').strip("'")
 
-                                file_size = len(body)
-                                checkpoint_data[str(fid)] = {"name": fn, "size": file_size}
-                                try:
-                                    with open(checkpoint_file, "w", encoding="utf-8") as cf:
-                                        json.dump(checkpoint_data, cf, indent=2)
-                                except Exception:
-                                    pass
+                                    # Koreksi tanggal filename jika berbeda dari kolom Tanggal tabel web
+                                    table_date = item.get("date")
+                                    corrected_fn, orig_date = _correct_filename_date(fn, table_date)
+                                    if orig_date:
+                                        _add_p3ste_log("warn", f"⚠️ Koreksi Tanggal [{orig_date} → {table_date}]: Nama file server '{fn}' disesuaikan dengan tanggal tabel web.")
+                                        fn = corrected_fn
 
-                                _p3ste_state["downloaded_files"].append({
-                                    "name": fn,
-                                    "path": out_path,
-                                    "size": file_size
-                                })
-                                _add_p3ste_log("success", f"✓ [{total_downloaded}] Tersimpan: {fn} ({file_size // 1024} KB)")
+                                    fn, out_path = _get_unique_p3ste_filename(target_folder, fn, session_filenames)
+
+                                    with open(out_path, "wb") as pf:
+                                        pf.write(body)
+
+                                    file_size = len(body)
+                                    session_filenames.add(fn)
+                                    checkpoint_data[str(fid)] = {"name": fn, "size": file_size}
+                                    try:
+                                        with open(checkpoint_file, "w", encoding="utf-8") as cf:
+                                            json.dump(checkpoint_data, cf, indent=2)
+                                    except Exception:
+                                        pass
+
+                                    _p3ste_state["downloaded_files"].append({
+                                        "name": fn,
+                                        "path": out_path,
+                                        "size": file_size
+                                    })
+                                    retry_tag = f" (setelah coba ulang ke-{attempt})" if attempt > 0 else ""
+                                    _add_p3ste_log("success", f"✓ [{total_downloaded}] Tersimpan: {fn} ({file_size // 1024} KB){retry_tag}")
+                                    download_success = True
+                                    break
+                                else:
+                                    last_err = "Bukan file PDF valid"
+                            elif fresp.status in (500, 502, 503, 504, 429, 408):
+                                last_err = f"HTTP {fresp.status}"
+                                if attempt < max_attempts - 1:
+                                    sleep_sec = 2.0 * (attempt + 1)
+                                    _add_p3ste_log("warn", f"⚠️ [{total_downloaded}] {fn}: {last_err} - Server sibuk, mencoba ulang ({attempt + 1}/{max_attempts}) dalam {sleep_sec:.0f} detik...")
+                                    time.sleep(sleep_sec)
+                                    continue
                             else:
-                                _add_p3ste_log("error", f"✗ [{total_downloaded}] {fn}: Bukan file PDF valid.")
-                        else:
-                            _add_p3ste_log("error", f"✗ [{total_downloaded}] {fn}: HTTP {fresp.status}")
-                    except Exception as fe:
-                        _add_p3ste_log("error", f"✗ [{total_downloaded}] {fn} Error: {fe}")
+                                last_err = f"HTTP {fresp.status}"
+                                break
+                        except Exception as fe:
+                            last_err = str(fe)
+                            if attempt < max_attempts - 1:
+                                sleep_sec = 2.0 * (attempt + 1)
+                                _add_p3ste_log("warn", f"⚠️ [{total_downloaded}] {fn}: Error koneksi ({last_err}) - Mencoba ulang ({attempt + 1}/{max_attempts}) dalam {sleep_sec:.0f} detik...")
+                                time.sleep(sleep_sec)
+                                continue
+
+                    if not download_success and not _p3ste_state["cancelled"]:
+                        _add_p3ste_log("error", f"✗ [{total_downloaded}] {fn}: {last_err} (Gagal pada putaran pertama, akan dicoba ulang di akhir)")
+                        failed_queue.append({
+                            "id": fid,
+                            "url": pdf_url,
+                            "default_fn": default_fn,
+                            "last_err": last_err,
+                            "date": item.get("date")
+                        })
+
+                    if total_downloaded > _p3ste_state["total"]:
+                        _p3ste_state["total"] = total_downloaded
 
                 old_first_id = new_page_pdfs[0]["id"] if new_page_pdfs else None
 
-                # Pengecekan halaman selanjutnya (Next Page)
-                can_go_next = _safe_evaluate(page, """() => {
-                    // 1. Cek DOM Tombol Next
-                    const nextLi = document.querySelector('li#table_next, #table_next, li.paginate_button.next, li.next, #tblData_next');
-                    if (nextLi && !nextLi.classList.contains('disabled') && nextLi.getAttribute('aria-disabled') !== 'true') {
-                        const a = nextLi.querySelector('a') || nextLi;
-                        a.click();
-                        return { hasNext: true };
-                    }
-                    // 2. Cek DataTables API
-                    if (typeof $ !== 'undefined' && $.fn.DataTable) {
-                        const tables = Array.from(document.querySelectorAll('table'));
-                        for (const tbl of tables) {
-                            if ($.fn.DataTable.isDataTable(tbl)) {
-                                const info = $(tbl).DataTable().page.info();
-                                if (info && info.page < info.pages - 1) {
-                                    $(tbl).DataTable().page('next').draw('page');
-                                    return { hasNext: true, page: info.page + 2, totalPages: info.pages };
+                # Pengecekan halaman selanjutnya (Next Page) dengan retry cerdas
+                max_next_retries = 3 if (_p3ste_state["total"] > 0 and total_downloaded < _p3ste_state["total"]) else 1
+                page_changed = False
+
+                for next_attempt in range(max_next_retries):
+                    if _p3ste_state["cancelled"]:
+                        break
+
+                    can_go_next = _safe_evaluate(page, """() => {
+                        // 1. Cek DOM Tombol Next
+                        const nextLi = document.querySelector('li#table_next, #table_next, li.paginate_button.next, li.next, #tblData_next');
+                        if (nextLi && !nextLi.classList.contains('disabled') && nextLi.getAttribute('aria-disabled') !== 'true') {
+                            const a = nextLi.querySelector('a') || nextLi;
+                            a.click();
+                            return { hasNext: true, method: 'dom' };
+                        }
+                        // 2. Cek DataTables API
+                        if (typeof $ !== 'undefined' && $.fn.DataTable) {
+                            const tables = Array.from(document.querySelectorAll('table'));
+                            for (const tbl of tables) {
+                                if ($.fn.DataTable.isDataTable(tbl)) {
+                                    const info = $(tbl).DataTable().page.info();
+                                    if (info && info.page < info.pages - 1) {
+                                        $(tbl).DataTable().page('next').draw('page');
+                                        return { hasNext: true, page: info.page + 2, totalPages: info.pages, method: 'api' };
+                                    }
                                 }
                             }
                         }
-                    }
-                    return { hasNext: false };
-                }""") or {}
+                        return { hasNext: false };
+                    }""") or {}
 
-                if not can_go_next.get("hasNext"):
-                    _add_p3ste_log("info", "Mencapai halaman terakhir.")
-                    break
+                    if not can_go_next.get("hasNext"):
+                        # Jika menurut indikator halaman habis tapi target belum terpenuhi, tunggu 2.5s lalu periksa ulang
+                        if _p3ste_state["total"] > 0 and total_downloaded < _p3ste_state["total"] and next_attempt < max_next_retries - 1:
+                            _add_p3ste_log("warn", f"⏳ Memverifikasi status pagination ({total_downloaded}/{_p3ste_state['total']} data)...")
+                            page.wait_for_timeout(2500)
+                            continue
+                        _add_p3ste_log("info", "Mencapai halaman terakhir.")
+                        break
 
-                _add_p3ste_log("info", f"Mengeklik 'Selanjutnya' ke Halaman {page_index + 1}...")
+                    if next_attempt == 0:
+                        _add_p3ste_log("info", f"Mengeklik 'Selanjutnya' ke Halaman {page_index + 1}...")
+                    else:
+                        _add_p3ste_log("warn", f"Mencoba ulang klik 'Selanjutnya' ke Halaman {page_index + 1} (Percobaan {next_attempt + 1}/{max_next_retries})...")
 
-                # Tunggu proses AJAX DataTables selesai memuat halaman berikutnya
-                page_changed = False
-                for _ in range(20):
-                    if _p3ste_state["cancelled"]: break
-                    page.wait_for_timeout(1000)
-                    
-                    cur_first_id = _safe_evaluate(page, r"""() => {
-                        const tr = document.querySelector('#table tbody tr, table tbody tr');
-                        if (!tr || tr.querySelector('.dataTables_empty')) return null;
-                        const m = (tr.innerHTML || '').match(/exports\/pdf\/(\d{4,8})|['"](\d{5,8})['"]/i);
-                        if (m) return m[1] || m[2];
-                        const txtMatch = (tr.innerText || '').match(/\b(\d{6,8})\b/);
-                        return txtMatch ? txtMatch[1] : null;
-                    }""")
-                    
-                    if cur_first_id and cur_first_id != old_first_id:
-                        page_changed = True
+                    # Tunggu proses AJAX DataTables selesai memuat halaman berikutnya (hingga 60 detik)
+                    for wait_sec in range(60):
+                        if _p3ste_state["cancelled"]: break
+                        page.wait_for_timeout(1000)
+
+                        # Re-click jika setelah 25 detik server belum merespons
+                        if wait_sec == 25:
+                            _safe_evaluate(page, """() => {
+                                const nextLi = document.querySelector('li#table_next, #table_next, li.paginate_button.next, li.next, #tblData_next');
+                                if (nextLi && !nextLi.classList.contains('disabled')) {
+                                    const a = nextLi.querySelector('a') || nextLi;
+                                    a.click();
+                                }
+                            }""")
+
+                        cur_first_id = _safe_evaluate(page, r"""() => {
+                            const tr = document.querySelector('#table tbody tr, table tbody tr');
+                            if (!tr || tr.querySelector('.dataTables_empty')) return null;
+                            const m = (tr.innerHTML || '').match(/exports\/pdf\/(\d{4,8})|['"](\d{5,8})['"]/i);
+                            if (m) return m[1] || m[2];
+                            const txtMatch = (tr.innerText || '').match(/\b(\d{6,8})\b/);
+                            return txtMatch ? txtMatch[1] : null;
+                        }""")
+
+                        if cur_first_id and cur_first_id != old_first_id:
+                            page_changed = True
+                            break
+
+                    if page_changed:
                         break
 
                 if not page_changed:
-                    _add_p3ste_log("info", "Halaman berikutnya tidak memuat data baru. Selesai.")
+                    if _p3ste_state["total"] > 0 and total_downloaded < _p3ste_state["total"]:
+                        _add_p3ste_log("warn", f"⚠️ Halaman berikutnya tidak merespons setelah beberapa percobaan. Pengunduhan diselesaikan pada {total_downloaded} dari target {_p3ste_state['total']} data.")
+                    else:
+                        _add_p3ste_log("info", "Halaman berikutnya tidak memuat data baru. Selesai.")
                     break
 
                 page_index += 1
                 page.wait_for_timeout(1500)
 
+            # Putaran Kedua: Coba ulang file yang sempat gagal pada putaran pertama
+            if failed_queue and not _p3ste_state["cancelled"]:
+                _add_p3ste_log("warn", f"🔄 Ditemukan {len(failed_queue)} file yang sempat gagal. Memulai putaran coba ulang otomatis...")
+                time.sleep(2.5)
+                still_failed = []
+                for idx, failed_item in enumerate(failed_queue, 1):
+                    if _p3ste_state["cancelled"]: break
+                    ffid = failed_item["id"]
+                    furl = failed_item["url"]
+                    ffn = failed_item["default_fn"]
+                    _add_p3ste_log("info", f"🔄 [Coba Ulang {idx}/{len(failed_queue)}] ID {ffid}...")
+
+                    retry_ok = False
+                    for r_att in range(3):
+                        if _p3ste_state["cancelled"]: break
+                        try:
+                            fresp = context.request.get(furl, timeout=35000)
+                            if fresp.status == 200:
+                                body = fresp.body()
+                                if body[:4] == b"%PDF":
+                                    cd = fresp.headers.get("content-disposition", "")
+                                    if "filename=" in cd:
+                                        cd_fn = re.search(r'filename=["\']?([^"\';]+)["\']?', cd)
+                                        if cd_fn:
+                                            ffn = cd_fn.group(1).strip().strip('"').strip("'")
+
+                                    # Koreksi tanggal filename jika berbeda dari kolom Tanggal tabel web
+                                    table_date = failed_item.get("date")
+                                    corrected_ffn, orig_date = _correct_filename_date(ffn, table_date)
+                                    if orig_date:
+                                        _add_p3ste_log("warn", f"⚠️ Koreksi Tanggal [{orig_date} → {table_date}]: Nama file server '{ffn}' disesuaikan dengan tanggal tabel web.")
+                                        ffn = corrected_ffn
+
+                                    ffn, out_path = _get_unique_p3ste_filename(target_folder, ffn, session_filenames)
+
+                                    with open(out_path, "wb") as pf:
+                                        pf.write(body)
+
+                                    file_size = len(body)
+                                    session_filenames.add(ffn)
+                                    checkpoint_data[str(ffid)] = {"name": ffn, "size": file_size}
+                                    try:
+                                        with open(checkpoint_file, "w", encoding="utf-8") as cf:
+                                            json.dump(checkpoint_data, cf, indent=2)
+                                    except Exception:
+                                        pass
+
+                                    _p3ste_state["downloaded_files"].append({
+                                        "name": ffn,
+                                        "path": out_path,
+                                        "size": file_size
+                                    })
+                                    _add_p3ste_log("success", f"✓ Berhasil diunduh pada putaran ulang: {ffn} ({file_size // 1024} KB)")
+                                    retry_ok = True
+                                    break
+                                else:
+                                    time.sleep(2.0)
+                            else:
+                                time.sleep(2.0)
+                        except Exception:
+                            time.sleep(2.0)
+
+                    if not retry_ok:
+                        still_failed.append(failed_item)
+
+                if still_failed:
+                    _add_p3ste_log("error", f"❌ {len(still_failed)} file tetap gagal diunduh setelah coba ulang: {', '.join(str(x['id']) for x in still_failed[:5])}")
+                else:
+                    _add_p3ste_log("success", "🎉 Semua file yang sempat gagal berhasil diunduh 100% pada putaran ulang!")
+
             if _p3ste_state["cancelled"]:
                 _add_p3ste_log("warn", "🛑 Pengunduhan dihentikan oleh pengguna.")
             else:
-                _add_p3ste_log("success", f"Selesai! Berhasil mengunduh total {total_downloaded} file PDF dari semua halaman.")
+                success_count = len(_p3ste_state['downloaded_files'])
+                target_tot = _p3ste_state['total']
+                if target_tot > 0 and success_count >= target_tot:
+                    _add_p3ste_log("success", f"🎉 Selesai! Semua {success_count} dari {target_tot} file PDF berhasil diunduh 100%.")
+                else:
+                    _add_p3ste_log("success", f"Selesai! Berhasil mengunduh total {success_count} file PDF dari semua halaman.")
 
             try:
                 context.close()
@@ -897,6 +1246,27 @@ def _pick_folder_native():
 
 def _save_file_dialog_native(default_name):
     """Opens a native Windows Save As file dialog."""
+    # 1. Coba via pywebview jika window aktif (Native Windows FileDialog)
+    try:
+        if getattr(webview, 'windows', None) and len(webview.windows) > 0:
+            dialog_type = getattr(webview.FileDialog, 'SAVE', getattr(webview, 'SAVE_DIALOG', 30))
+            ext = os.path.splitext(default_name)[1]
+            file_types = ('Excel Files (*.xlsx)', 'All files (*.*)') if ext == '.xlsx' else ('All files (*.*)',)
+            result = webview.windows[0].create_file_dialog(
+                dialog_type,
+                save_filename=default_name,
+                file_types=file_types
+            )
+            if result:
+                if isinstance(result, (list, tuple)) and len(result) > 0:
+                    return os.path.normpath(result[0])
+                elif isinstance(result, str):
+                    return os.path.normpath(result)
+            return None
+    except Exception as e:
+        _log(f"WebView save dialog notice: {e}")
+
+    # 2. Coba via Tkinter (Dev mode jika tkinter tersedia)
     try:
         import tkinter as tk
         from tkinter import filedialog
@@ -916,11 +1286,13 @@ def _save_file_dialog_native(default_name):
     except Exception as e:
         _log(f"Tkinter save dialog notice: {e}")
 
+    # 3. Fallback via PowerShell WinForms
     try:
         ext = os.path.splitext(default_name)[1]
         ps_cmd = [
             "powershell.exe",
             "-NoProfile",
+            "-Sta",
             "-Command",
             f"Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.SaveFileDialog; $f.FileName = '{default_name}'; $f.Filter = 'Files (*{ext})|*{ext}|All files (*.*)|*.*'; if($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK){{ [Console]::Out.Write($f.FileName) }}"
         ]
@@ -1081,25 +1453,43 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
         global _selected_folder
         try:
             length = int(self.headers.get("Content-Length", 0))
-            body = self.rfile.read(length)
-            data = json.loads(body)
-            filename = data.get("filename", "")
-            b64data = data.get("data", "")
+            data = json.loads(self.rfile.read(length))
+            filename = str(data.get("filename", ""))
+            relative = str(data.get("relativePath") or filename).replace("\\\\", "/")
+            conflict = str(data.get("conflictMode") or "rename").lower()
             folder = data.get("folder") or _selected_folder
-            
             if not folder:
                 self._json({"error": "Folder tujuan penyimpanan belum ditentukan."}, 400)
                 return
-
-            os.makedirs(folder, exist_ok=True)
-            raw = base64.b64decode(b64data)
-            clean_filename = "".join(c for c in filename if c not in '<>:"/\\|?*').strip()
-            if not clean_filename.lower().endswith(".pdf"):
-                clean_filename += ".pdf"
-            path = os.path.join(folder, clean_filename)
+            if conflict not in {"rename", "skip", "overwrite"}:
+                self._json({"error": "Mode konflik tidak valid."}, 400)
+                return
+            parts = [part for part in relative.split("/") if part]
+            if not parts or any(part in {".", ".."} or ":" in part for part in parts):
+                self._json({"error": "Path tujuan tidak aman."}, 400)
+                return
+            root = os.path.abspath(folder)
+            path = os.path.abspath(os.path.join(root, *parts))
+            if os.path.commonpath([root, path]) != root:
+                self._json({"error": "Path tujuan berada di luar folder root."}, 400)
+                return
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            if os.path.exists(path):
+                if conflict == "skip":
+                    return self._json({"ok": True, "status": "skipped", "path": path})
+                if conflict == "rename":
+                    stem, ext = os.path.splitext(path)
+                    counter = 2
+                    candidate = path
+                    while os.path.exists(candidate):
+                        candidate = f"{stem} ({counter}){ext}"
+                        counter += 1
+                    path = candidate
+            raw = base64.b64decode(data.get("data", ""))
             with open(path, "wb") as f:
                 f.write(raw)
-            self._json({"ok": True, "path": path})
+            _log(f"Saved: {path}")
+            self._json({"ok": True, "status": "saved", "path": path})
         except Exception as e:
             _log(f"Save file error ({filename}): {e}")
             self._json({"error": f"{filename}: {str(e)}"}, 500)
@@ -1209,12 +1599,55 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
 def start_server():
     _log("Server thread starting (ThreadingHTTPServer)...")
     http.server.ThreadingHTTPServer.allow_reuse_address = True
+    http.server.ThreadingHTTPServer.request_queue_size = 64
     try:
         with http.server.ThreadingHTTPServer(("", PORT), ApiHandler) as httpd:
             _log(f"Server listening on port {PORT}")
             httpd.serve_forever()
     except OSError as e:
         _log(f"Server notice: Port {PORT} sudah aktif atau sedang digunakan ({e}). Menggunakan server yang ada.")
+
+
+_storage_lock_fd = None
+
+
+def _get_safe_webview_storage():
+    """Mendapatkan direktori penyimpanan WebView2 yang aman dan bebas benturan multi-instance."""
+    global _storage_lock_fd
+    base_storage = os.path.join(APP_DATA_DIR, "webview_storage")
+    os.makedirs(base_storage, exist_ok=True)
+    
+    # Pembersihan direktori storage lama dari proses yang sudah mati
+    try:
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        for item in os.listdir(APP_DATA_DIR):
+            if item.startswith("webview_storage_") and item != "webview_storage":
+                pid_str = item.replace("webview_storage_", "")
+                if pid_str.isdigit():
+                    handle = kernel32.OpenProcess(0x1000, False, int(pid_str))
+                    if handle:
+                        kernel32.CloseHandle(handle)
+                    else:
+                        shutil.rmtree(os.path.join(APP_DATA_DIR, item), ignore_errors=True)
+    except Exception:
+        pass
+
+    # Cek apakah base_storage dapat dikunci oleh proses ini
+    try:
+        import msvcrt
+        lock_marker = os.path.join(base_storage, ".instance_lock")
+        fd = os.open(lock_marker, os.O_CREAT | os.O_RDWR)
+        msvcrt.locking(fd, msvcrt.LK_NBLCK, 1)
+        _storage_lock_fd = fd
+        _log(f"Using primary webview_storage: {base_storage}")
+        return base_storage
+    except (IOError, OSError, PermissionError) as e:
+        # Jika instance lain sedang berjalan, gunakan storage terisolasi per-PID agar tidak crash 0x800700AA
+        fallback_storage = os.path.join(APP_DATA_DIR, f"webview_storage_{os.getpid()}")
+        os.makedirs(fallback_storage, exist_ok=True)
+        _log(f"Primary webview_storage in use ({e}). Using isolated fallback: {fallback_storage}")
+        return fallback_storage
 
 
 def main():
@@ -1253,8 +1686,7 @@ def main():
     webview.windows[0].events.minimized += on_minimized
     webview.windows[0].events.restored += on_restored
     _log("Events bound. Starting webview...")
-    webview_storage = os.path.join(APP_DATA_DIR, "webview_storage")
-    os.makedirs(webview_storage, exist_ok=True)
+    webview_storage = _get_safe_webview_storage()
     try:
         webview.start(private_mode=False, storage_path=webview_storage)
     except Exception as e:
@@ -1262,6 +1694,16 @@ def main():
         import traceback
         _log(traceback.format_exc())
         print(f"CRASH: {e}")
+    finally:
+        global _storage_lock_fd
+        if _storage_lock_fd is not None:
+            try:
+                import msvcrt
+                msvcrt.locking(_storage_lock_fd, msvcrt.LK_UNLCK, 1)
+                os.close(_storage_lock_fd)
+            except Exception:
+                pass
+            _storage_lock_fd = None
     _log("=== Sintelis Utility END ===")
     print("[OK] Window closed.")
 

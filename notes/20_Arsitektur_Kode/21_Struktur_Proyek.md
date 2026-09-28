@@ -24,16 +24,21 @@ ganti-nama-app/
 │
 ├── web-app/                     # **PROJECT UTAMA** — React SPA + Python WebView
 │   ├── src/                     # Source React
-│   │   ├── App.jsx              # Komponen utama UI — upload, proses, simpan
+│   │   ├── App.jsx              # Komponen utama UI — Menu 1 (OCR & Rename) + Split View
+│   │   ├── components/          # Komponen modular
+│   │   │   ├── P3STEDownloader.jsx  # Menu 2: Downloader otomatis website P3-STE
+│   │   │   └── AssetAuditPanel.jsx   # Menu 1: Panel Audit & Monitoring Kelengkapan Aset
 │   │   ├── index.css            # Premium dark theme CSS
 │   │   ├── main.jsx             # Entry point React
 │   │   └── utils/               # Library pendukung
-│   │       ├── detector.js      # detectDoc() — deteksi tipe dokumen
+│   │       ├── detector.js      # detectDoc() — deteksi tipe dokumen (15 branch)
 │   │       ├── pdfProcessor.js  # PDF.js render + ekstrak teks
-│   │       └── fsHandler.js     # File System Access API + ZIP handler
+│   │       ├── fsHandler.js     # File System Access API, folder PDF scan, & ZIP handler
+│   │       └── masterAssets.js  # Master data 394+ aset 2026, audit engine, & Excel 3-sheet
 │   ├── dist/                    # Vite build output (production)
-│   ├── build_exe.spec           # PyInstaller spec untuk desktop EXE
-│   ├── run_desktop_webview.py   # Python WebView + API OCR backend
+│   ├── dist_exe/                # PyInstaller standalone EXE output (SintelisUtility.exe)
+│   ├── build_exe.spec           # PyInstaller build spec
+│   ├── run_desktop_webview.py   # Python WebView + OCR backend + Downloader Playwright
 │   ├── index.html               # HTML entry (Vite)
 │   ├── vite.config.js
 │   └── package.json
@@ -56,12 +61,13 @@ ganti-nama-app/
 ### 1. `web-app/` (React SPA + Vite)
 Adalah **project utama** Sintelis Utility. React single-page application yang berjalan di browser WebView.
 - **Peran**:
-  - Drag & drop / pilih file PDF
-  - Render PDF via PDF.js di browser
-  - Panggil API OCR ke backend Python
+  - Drag & drop / pilih file PDF (Menu 1)
+  - Render PDF via PDF.js di browser & panggil API OCR ke backend Python
   - Deteksi tipe dokumen → rename otomatis
+  - **Audit & Monitoring Kelengkapan Aset** (`AssetAuditPanel.jsx` & `masterAssets.js`)
+  - **Downloader Otomatis P3-STE** (`P3STEDownloader.jsx`) dengan multi-akun & kontrol proses
   - Simpan hasil ke folder atau download ZIP
-  - Export hasil/error ke Excel (XLSX)
+  - Export hasil audit / log ke Excel (XLSX)
 
 ### 2. `run_desktop_webview.py` (Python Backend + Native Window)
 Backend Python yang menjalankan:

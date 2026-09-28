@@ -6,6 +6,8 @@ backup_20260715_*/
 # Backup & temp
 *.bak
 *.bak_*
+*.backup_*
+backup/
 app.py (2).bak
 ~$*.xlsx
 __pycache__/

@@ -4,7 +4,8 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { detectDoc, buildFilename } from './utils/detector';
-import { processSingleFile } from './utils/pdfProcessor';
+import { processSingleFile, computeSha256 } from './utils/pdfProcessor';
+import { buildAssetDestination } from './utils/assetFolderMapper';
 import { pickDirectory, writeFileToDir, createZipBlob, triggerDownload, saveFileWithDialog } from './utils/fsHandler';
 import P3STEDownloader from './components/P3STEDownloader';
 import AssetAuditPanel from './components/AssetAuditPanel';
@@ -19,6 +20,8 @@ export default function App() {
 
   const [jenisKegiatan, setJenisKegiatan] = useState('Perawatan');
   const [instansi, setInstansi] = useState('BTP JAK');
+  const [outputMode, setOutputMode] = useState('root');
+  const [conflictMode, setConflictMode] = useState('rename');
   const [dirHandle, setDirHandle] = useState(null);
   const [results, setResults] = useState([]);
   const [errors, setErrors] = useState([]);
@@ -26,6 +29,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('hasil');
   const [paused, setPaused] = useState(false);
   const [errorFileNames, setErrorFileNames] = useState([]);
+  const [failedSaveItems, setFailedSaveItems] = useState([]);
   const logEndRef = useRef();
   const inputRef = useRef();
   const cancelledRef = useRef(false);
@@ -71,7 +75,7 @@ export default function App() {
       const newFiles = selected.filter(f => !existingNames.has(f.name));
       return [...prev, ...newFiles];
     });
-    setMessage(null); setResults([]); setErrors([]); setLogs([]);
+    setMessage(null); setResults([]); setErrors([]); setLogs([]); setFailedSaveItems([]);
   }, []);
 
   const handleDrop = useCallback((e) => {
@@ -82,7 +86,7 @@ export default function App() {
       const newFiles = dropped.filter(f => !existingNames.has(f.name));
       return [...prev, ...newFiles];
     });
-    setMessage(null); setResults([]); setErrors([]); setLogs([]);
+    setMessage(null); setResults([]); setErrors([]); setLogs([]); setFailedSaveItems([]);
   }, []);
 
   const removeFile = useCallback((name) => {
@@ -134,21 +138,82 @@ export default function App() {
     setMessage(null);
     // Saat retry: JANGAN reset results — snapshot dulu untuk di-merge nanti
     // Saat proses normal: reset semua
-    if (!isRetry) { setResults([]); setErrors([]); }
+    if (!isRetry) { setResults([]); setErrors([]); setFailedSaveItems([]); }
 
     const TIMEOUT_MS = 30000; // 30 detik per file
-    addLog('info', `Mulai proses ${targetFiles.length} file...`);
+    addLog('info', `Mulai analisis duplikasi & proses ${targetFiles.length} file...`);
     const allResultItems = [];
     const soErAssets = [];
     const soBulananAssets = [];
     const errorList = [];
     const erroredFiles = []; // track File objects yang error untuk retry
 
-    // Parallel processing: 4 file sekaligus
-    const CONCURRENCY = 4;
-    let globalIdx = 0;
+    // -------------------------------------------------------------
+    // Tahap 1: Pre-OCR Fast Binary Deduplication (Level 1)
+    // Lewati file yang memiliki hash SHA-256 byte biner yang 100% identik
+    // HANYA jika nama filenya terindikasi duplikat unduhan (akhiran (1), (2), - Copy, _1).
+    // Jika nama filenya berbeda secara substantif (misal menargetkan aset berbeda seperti JPL 07 vs JPL BNR),
+    // berikan kesempatan untuk diproses; Level 2 (Post-OCR Signature Check) akan menyaring jika ternyata hasilnya duplikat.
+    // -------------------------------------------------------------
+    const isCopyOrDownloadDuplicate = (nameA, nameB) => {
+      const stripExt = (n) => n.replace(/\.[^/.]+$/, '');
+      const cleanSuffixes = (n) => stripExt(n)
+        .replace(/\s*\(\d+\)$/, '')
+        .replace(/\s*-\s*Copy(?:\s*\(\d+\))?$/i, '')
+        .replace(/_\d+$/, '')
+        .trim()
+        .toLowerCase();
+      return cleanSuffixes(nameA) === cleanSuffixes(nameB);
+    };
 
-    for (let ci = 0; ci < targetFiles.length; ci += CONCURRENCY) {
+    const seenBinaryHashes = new Map(); // hash -> originalFilename
+    const filesToProcess = [];
+    let binaryDupCount = 0;
+
+    for (let idx = 0; idx < targetFiles.length; idx++) {
+      if (cancelledRef.current) {
+        setProcessing(false);
+        setProgress({ current: 0, total: 0 });
+        return;
+      }
+      const file = targetFiles[idx];
+      try {
+        const arrayBuffer = await file.arrayBuffer();
+        file._arrayBuffer = arrayBuffer;
+        const binHash = await computeSha256(arrayBuffer);
+        if (seenBinaryHashes.has(binHash)) {
+          const original = seenBinaryHashes.get(binHash);
+          if (isCopyOrDownloadDuplicate(file.name, original)) {
+            binaryDupCount++;
+            addLog('warn', `[DUPLIKAT DILEWATI] "${file.name}" dilewati (duplikat unduhan dari "${original}")`);
+            continue;
+          }
+        } else {
+          seenBinaryHashes.set(binHash, file.name);
+        }
+        filesToProcess.push(file);
+      } catch (e) {
+        // Jika pembacaan awal buffer gagal, serahkan ke filesToProcess agar dilaporkan di errorList
+        filesToProcess.push(file);
+      }
+    }
+
+    if (binaryDupCount > 0) {
+      addLog('info', `Eliminasi awal: ${binaryDupCount} file duplikat biner identik dilewati. Memproses ${filesToProcess.length} file unik...`);
+    }
+
+    // Set initial progress counter sesuai binary duplicates yang langsung dilewati
+    let globalIdx = binaryDupCount;
+    setProgress({ current: globalIdx, total: targetFiles.length });
+
+    // -------------------------------------------------------------
+    // Tahap 2: Parallel OCR & Post-OCR Content Signature Deduplication (Level 2)
+    // -------------------------------------------------------------
+    const CONCURRENCY = 4;
+    const seenContentSignatures = new Map(); // contentSig -> originalFilename
+    let contentDupCount = 0;
+
+    for (let ci = 0; ci < filesToProcess.length; ci += CONCURRENCY) {
       // --- Cek cancel ---
       if (cancelledRef.current) {
         setProcessing(false);
@@ -166,12 +231,13 @@ export default function App() {
         return;
       }
 
-      const chunk = targetFiles.slice(ci, ci + CONCURRENCY);
+      const chunk = filesToProcess.slice(ci, ci + CONCURRENCY);
       const chunkStartIdx = ci;
 
       // Log semua file di chunk ini
       for (let j = 0; j < chunk.length; j++) {
-        addLog('processing', `[${chunkStartIdx + j + 1}/${targetFiles.length}] OCR ${chunk[j].name}`);
+        const currentNum = binaryDupCount + chunkStartIdx + j + 1;
+        addLog('processing', `[${currentNum}/${targetFiles.length}] OCR ${chunk[j].name}`);
       }
 
       // Wrap setiap file dengan timeout
@@ -192,7 +258,7 @@ export default function App() {
           return;
         }
 
-        const counter = chunkStartIdx + j + 1;
+        const counter = binaryDupCount + chunkStartIdx + j + 1;
         const file = chunk[j];
         const settled = batchResults[j];
 
@@ -230,6 +296,21 @@ export default function App() {
           continue;
         }
 
+        // --- Level 2 Content Signature Check ---
+        // Jika tanggal, kategori, daftar aset, dan teks checklist alfanumerik sama persis
+        const normText = (textFlat || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+        if (normText.length >= 30) {
+          const assetFingerprint = assets.map(a => `${a.id || ''}_${a.loc || ''}`).sort().join(';');
+          const contentSig = `${tglFull}|${kategori}|${assetFingerprint}|${normText}`;
+          if (seenContentSignatures.has(contentSig)) {
+            const originalFile = seenContentSignatures.get(contentSig);
+            contentDupCount++;
+            addLog('warn', `[DUPLIKAT DILEWATI] "${filename}" dilewati (isi checklist identik dengan "${originalFile}")`);
+            continue; // Jangan masukkan ke allResultItems
+          }
+          seenContentSignatures.set(contentSig, filename);
+        }
+
         addLog('success', `[${counter}/${targetFiles.length}] ${filename} → ${kategori} (${assets.length} aset)`);
 
         for (const asset of assets) {
@@ -243,10 +324,15 @@ export default function App() {
           } else if (asset.isBulanan) {
             soBulananAssets.push({ fileBytes, fname: filename, seqNum: asset.seqNum ?? 1, loc, kode, kategori, tglFull, prefixPeriode, jenisKegiatan, formatBd });
           } else {
-            allResultItems.push({ fileBytes, identitas, kode, jenisKegiatan, tglFull, prefixPeriode, formatBd });
+            allResultItems.push({ fileBytes, identitas, kode, kategori, jenisKegiatan, tglFull, prefixPeriode, formatBd });
           }
         }
       }
+    }
+
+    // Bersihkan buffer cache file
+    for (const f of filesToProcess) {
+      delete f._arrayBuffer;
     }
 
     if (cancelledRef.current) {
@@ -275,7 +361,7 @@ export default function App() {
         } else {
           identitas = `${item.kategori} OTB ${item.erType} ${item.loc}`.replace(/\s+/g, ' ').trim();
         }
-        allResultItems.push({ fileBytes: item.fileBytes, identitas, kode: item.kode, jenisKegiatan: item.jenisKegiatan, tglFull: item.tglFull, prefixPeriode: item.prefixPeriode, formatBd: item.formatBd });
+        allResultItems.push({ fileBytes: item.fileBytes, identitas, kode: item.kode, kategori: item.kategori, jenisKegiatan: item.jenisKegiatan, tglFull: item.tglFull, prefixPeriode: item.prefixPeriode, formatBd: item.formatBd });
       }
     }
 
@@ -290,25 +376,39 @@ export default function App() {
       items.forEach((item, idx) => {
         const suffix = idx > 0 ? ` (${idx + 1})` : '';
         const identitas = `${item.kategori} ${item.loc}${suffix}`.replace(/\s+/g, ' ').trim();
-        allResultItems.push({ fileBytes: item.fileBytes, identitas, kode: item.kode, jenisKegiatan: item.jenisKegiatan, tglFull: item.tglFull, prefixPeriode: item.prefixPeriode, formatBd: item.formatBd });
+         allResultItems.push({ fileBytes: item.fileBytes, identitas, kode: item.kode, kategori: item.kategori, jenisKegiatan: item.jenisKegiatan, tglFull: item.tglFull, prefixPeriode: item.prefixPeriode, formatBd: item.formatBd });
       });
     }
 
     // Build filenames + dedup
+    // Build filenames + penanganan duplikat otomatis dengan (2), (3), dst.
     const uniqueNames = new Set();
     const finalNames = [];
     for (const item of allResultItems) {
-      let newName = buildFilename(item.prefixPeriode, item.kode, item.jenisKegiatan, item.identitas, item.tglFull, item.formatBd);
-      newName = newName.replace(/[<>:"\/\\|?*]/g, '_');
-      if (!uniqueNames.has(newName)) {
-        uniqueNames.add(newName);
-        finalNames.push({ data: item.fileBytes, name: newName });
-      } else {
-        errorList.push(`WARNING|?|Duplikat: ${newName}`);
+       let newName = buildFilename(item.prefixPeriode, item.kode, item.jenisKegiatan, item.identitas, item.tglFull, item.formatBd);
+       newName = newName.replace(/[<>:"\\/\\|?*]/g, '_');
+       const mapped = outputMode === 'asset' ? buildAssetDestination({ kategori: item.kategori || item.kode, asset: { id: item.identitas, loc: '' }, filename: newName }) : null;
+       let relativePath = mapped?.ok ? mapped.relativePath : newName;
+       
+       let finalName = newName;
+      if (uniqueNames.has(finalName)) {
+        let counter = 2;
+        const baseName = newName.replace(/\.pdf$/i, '');
+        while (uniqueNames.has(`${baseName} (${counter}).pdf`)) {
+          counter++;
+        }
+        finalName = `${baseName} (${counter}).pdf`;
+        addLog('info', `Dokumen sejenis dengan isi berbeda terdeteksi, diberi penomoran: ${finalName}`);
       }
+       uniqueNames.add(finalName);
+       if (outputMode === 'asset' && !mapped?.ok) addLog('warn', `${newName}: mapping folder aset gagal, disimpan di root.`);
+       finalNames.push({ data: item.fileBytes, name: finalName, relativePath: outputMode === 'asset' && mapped?.ok ? relativePath : finalName });
     }
 
     setProgress({ current: targetFiles.length, total: targetFiles.length });
+
+    const totalSkippedDups = binaryDupCount + contentDupCount;
+    const dupSummary = totalSkippedDups > 0 ? `, ${totalSkippedDups} duplikat dieliminasi otomatis` : '';
 
     if (isRetry) {
       // Merge hasil retry dengan hasil lama — dedup by name
@@ -320,24 +420,25 @@ export default function App() {
       // Ganti errors lama dengan errors dari retry (file yg masih gagal)
       setErrors(errorList);
       if (erroredFiles.length > 0) {
-        addLog('info', `Retry selesai: ${finalNames.length} berhasil, ${erroredFiles.length} masih error.`);
+        addLog('info', `Retry selesai: ${finalNames.length} berhasil, ${erroredFiles.length} masih error${dupSummary}.`);
       } else {
-        addLog('info', `Retry selesai: semua file berhasil diproses.`);
+        addLog('info', `Retry selesai: semua file berhasil diproses${dupSummary}.`);
       }
     } else {
       setResults(finalNames);
       setErrors(errorList);
       if (erroredFiles.length > 0) {
-        addLog('info', `Selesai: ${finalNames.length} berhasil, ${erroredFiles.length} error (bisa di-retry).`);
+        addLog('info', `Selesai: ${finalNames.length} berhasil, ${erroredFiles.length} error${dupSummary}.`);
       } else {
-        addLog('info', `Selesai deteksi: ${finalNames.length} file siap disimpan.`);
+        const dupNote = totalSkippedDups > 0 ? ` (${totalSkippedDups} duplikat dieliminasi otomatis)` : '';
+        addLog('info', `Selesai deteksi: ${finalNames.length} file siap disimpan${dupNote}.`);
       }
     }
 
     setProcessing(false);
     setPaused(false);
     pausedRef.current = false;
-  }, [files, jenisKegiatan, instansi, addLog]);
+  }, [files, jenisKegiatan, instansi, outputMode, addLog]);
 
   // Simpan versi terbaru handleProcess ke ref setiap render
   // Ini menghindari stale closure di handleRetryErrors
@@ -385,44 +486,57 @@ export default function App() {
     }
   }, [logs, addLog]);
 
-  const handleSave = useCallback(async () => {
-    if (!results.length) return;
+  const handleSave = useCallback(async (customItems = null) => {
+    const isRetrySave = Array.isArray(customItems) && customItems.length > 0;
+    const targetItems = isRetrySave ? customItems : results;
+    if (!targetItems.length || processing) return;
     setProcessing(true);
+    setProgress({ current: 0, total: targetItems.length });
     if (dirHandle) {
       let savedCount = 0;
       let failCount = 0;
-      for (const f of results) {
-        try {
-          await writeFileToDir(dirHandle, f.name, f.data);
-          savedCount++;
-        } catch (err) {
-          failCount++;
-          addLog('error', `Gagal simpan "${f.name}": ${err.message}`);
-        }
+      const currentFailed = [];
+      const SAVE_CONCURRENCY = 4;
+      for (let i = 0; i < targetItems.length; i += SAVE_CONCURRENCY) {
+        const chunk = targetItems.slice(i, i + SAVE_CONCURRENCY);
+        await Promise.all(chunk.map(async (f) => {
+          try {
+            await writeFileToDir(dirHandle, f.name, f.data, f.relativePath || f.name, conflictMode);
+            savedCount++;
+          } catch (err) {
+            failCount++;
+            currentFailed.push(f);
+            addLog('error', `Gagal simpan "${f.name}": ${err.message}`);
+          }
+        }));
+        setProgress({ current: savedCount + failCount, total: targetItems.length });
       }
+      setFailedSaveItems(currentFailed);
       if (failCount === 0) {
         addLog('success', `${savedCount} file tersimpan ke "${dirHandle.name}"`);
         setMessage({ type: 'success', text: `${savedCount} file tersimpan ke "${dirHandle.name}"` });
       } else {
         addLog('warning', `${savedCount} file berhasil disimpan, ${failCount} gagal.`);
-        setMessage({ type: 'warning', text: `${savedCount} file berhasil disimpan, ${failCount} gagal (lihat log).` });
+        setMessage({ type: 'warning', text: `${savedCount} file berhasil disimpan, ${failCount} gagal (lihat log). Klik tombol "Simpan Ulang Gagal" untuk mencoba lagi.` });
       }
     } else {
       try {
-        const blob = await createZipBlob(results);
+        const blob = await createZipBlob(targetItems);
         const reader = new FileReader();
         reader.onloadend = async () => {
           const b64data = reader.result.split(',')[1];
           const res = await saveFileWithDialog('Hasil_Rename.zip', b64data);
           if (res && res.ok) {
+            setFailedSaveItems([]);
             addLog('success', `ZIP tersimpan: ${res.path}`);
             setMessage({ type: 'success', text: `ZIP berhasil disimpan ke: ${res.path}` });
           } else if (res && res.cancelled) {
             addLog('info', 'Penyimpanan ZIP dibatalkan.');
           } else {
             triggerDownload(blob, 'Hasil_Rename.zip');
-            addLog('success', `ZIP diunduh (${results.length} file)`);
-            setMessage({ type: 'success', text: `${results.length} file dalam ZIP diunduh.` });
+            setFailedSaveItems([]);
+            addLog('success', `ZIP diunduh (${targetItems.length} file)`);
+            setMessage({ type: 'success', text: `${targetItems.length} file dalam ZIP diunduh.` });
           }
         };
         reader.readAsDataURL(blob);
@@ -431,7 +545,13 @@ export default function App() {
       }
     }
     setProcessing(false);
-  }, [results, dirHandle, addLog]);
+  }, [results, dirHandle, addLog, processing, conflictMode]);
+
+  const handleRetrySaveFailed = useCallback(() => {
+    if (!failedSaveItems.length || processing) return;
+    addLog('info', `Mencoba menyimpan ulang ${failedSaveItems.length} file yang gagal...`);
+    handleSave(failedSaveItems);
+  }, [failedSaveItems, processing, handleSave, addLog]);
 
   const handleExportExcel = useCallback(async () => {
     if (!results.length) return;
@@ -592,6 +712,21 @@ export default function App() {
                   <option value="BTP BD">BTP BD {formatBd ? '— KHUSUS SINTEL BOO' : ''}</option>
                 </select>
               </label>
+              <label>
+                <span>Lokasi output</span>
+                <select value={outputMode} onChange={e => setOutputMode(e.target.value)}>
+                  <option value="root">Folder root</option>
+                  <option value="asset">Folder per aset</option>
+                </select>
+              </label>
+              <label>
+                <span>Jika file sudah ada</span>
+                <select value={conflictMode} onChange={e => setConflictMode(e.target.value)}>
+                  <option value="rename">Tambah nama otomatis</option>
+                  <option value="skip">Lewati</option>
+                  <option value="overwrite">Timpa</option>
+                </select>
+              </label>
             </div>
 
             {formatBd && (
@@ -617,7 +752,7 @@ export default function App() {
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
                   <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>{files.length} file dipilih</span>
                   <button className="btn btn-secondary" style={{ padding: '0.3rem 0.7rem', fontSize: '0.78rem' }}
-                    onClick={() => { setFiles([]); setResults([]); setErrors([]); setMessage(null); setLogs([]); }}>
+                    onClick={() => { setFiles([]); setResults([]); setErrors([]); setMessage(null); setLogs([]); setFailedSaveItems([]); }}>
                     Hapus semua
                   </button>
                 </div>
@@ -674,10 +809,10 @@ export default function App() {
             </div>
             {results.length > 0 && (
               <div style={{ marginTop: '0.5rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-                <button className="btn btn-primary" onClick={handleSave}>
-                  Simpan {results.length} File
+                <button className="btn btn-primary" disabled={processing} onClick={() => handleSave()}>
+                  {processing ? `Menyimpan (${progress.current}/${progress.total || results.length})...` : `Simpan ${results.length} File`}
                 </button>
-                <button className="btn btn-secondary" onClick={handleExportExcel}>
+                <button className="btn btn-secondary" disabled={processing} onClick={handleExportExcel}>
                   📊 Ekspor Excel
                 </button>
                 <button
@@ -689,6 +824,11 @@ export default function App() {
                 {!processing && errorFileNames.length > 0 && (
                   <button className="btn btn-danger" onClick={handleRetryErrors}>
                     🔄 Proses Ulang Error ({errorFileNames.length} file)
+                  </button>
+                )}
+                {!processing && failedSaveItems.length > 0 && (
+                  <button className="btn btn-danger" onClick={handleRetrySaveFailed}>
+                    🔄 Simpan Ulang Gagal ({failedSaveItems.length} file)
                   </button>
                 )}
               </div>

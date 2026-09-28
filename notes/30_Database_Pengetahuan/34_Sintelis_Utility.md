@@ -7,18 +7,16 @@
 - **Versi**: 2.0.0
 - **Fungsi**: OCR PDF + rename otomatis file menggunakan pola regex untuk dokumen maintenance/pengawasan
 - **Tipe**: Desktop EXE (React SPA + Python WebView, PyInstaller bundle)
-- **Framework**: React + Vite (frontend), Python WebView + Tesseract (backend)
+- **Framework**: React + Vite (frontend), Python WebView + Tesseract + Playwright (backend)
 
 ## Fitur Inti
-1. **Drag-drop PDF** — drop file/folder langsung dari OS
-2. **OCR** — Python backend: `pdf2image` + `pytesseract` (engine tesseract)
-3. **Deteksi Dokumen** — `detector.js`: 15 branch regex + keyword matching
-4. **Pola Rename** — regex untuk `JPL`, `PTPP`, `BTP`, `BD`, dll
-5. **Real-time Log** — `progress_callback` streaming log ke UI tiap file
-6. **Save on Demand** — proses selesai → user klik **💾 Simpan** → baru extract ke folder output
-7. **Tabel 3 Tab**: "📎 File Input" | "✅ Berhasil" | "⚠️ Error" — berjejer
-8. **Counter** — emoji ✅ / ⚠️ di tiap tab
-9. **Export Excel** — export hasil/error ke XLSX dengan 3 sheet
+1. **Menu 1: OCR PDF & Rename Otomatis** — drag & drop PDF, 15 branch deteksi tipe dokumen, rename otomatis sesuai pola aset & lokasi.
+2. **Audit & Monitoring Kelengkapan Aset (Menu 1)** — integrasi master data 394+ aset SAP Resor 1.21 BOO (398 file bulanan, 3-bulanan, 6-bulanan, 1-tahunan), dual-source (hasil rename vs folder komputer lokal), filter kurang saja, dan ekspor laporan Excel 3 sheet.
+3. **Menu 2: Downloader Otomatis P3-STE** — otomasi unduh laporan PDF dari website P3-STE via Playwright/Requests, multi-akun login persisten, auto-retry adaptif saat server HTTP 500, sweep queue coba ulang file gagal, dan penomoran otomatis nama file duplikat ` (2)`, ` (3)`.
+4. **Tombol Global Hentikan Proses** — mematikan browser engine, thread download, dan proses OCR serentak.
+5. **Real-time Log & Progress Bar** — pembaruan progres dinamis real-time (persentase & jumlah file).
+6. **Save on Demand** — simpan langsung ke folder tujuan atau unduh ZIP.
+7. **Export Excel Multi-Sheet** — rekapitulasi audit dan log ke file XLSX.
 
 ## UI Design
 - **Typography**: Segoe UI 13-18pt (judul), Consolas 13pt (log/code)

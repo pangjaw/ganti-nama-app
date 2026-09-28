@@ -644,6 +644,24 @@ body {
   background: var(--bg-primary);
   border-radius: 4px;
   overflow: hidden;
+  position: relative;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), #38bdf8);
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+@keyframes indeterminateProgress {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(200%); }
+}
+
+.progress-bar-fill.indeterminate {
+  width: 50% !important;
+  animation: indeterminateProgress 1.5s infinite ease-in-out;
 }
 
 .progress-subtext {

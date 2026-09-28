@@ -27,7 +27,8 @@ Vault dokumentasi untuk **Sintelis Utility** — aplikasi desktop untuk OCR & re
 - [[43_Temuan_dan_Rencana_Perbaikan_v2|🐛 Temuan & Fix Batch 2]] — bug regex, lokasi per aset (semua fixed ✅)
 - [[44_Temuan_dan_Rencana_Perbaikan_v3|🐛 Temuan & Fix Batch 3]] — validasi DATA ASET RESOR 2026
 - [[45_Handover_PC_Kantor|💻 Handover PC Kantor]] — catatan setup & handover perangkat
-- [[46_Temuan_dan_Fix_Batch_5|🐛 Temuan & Fix Batch 5]] — blank minimize, cancel stuck, PDSE/PTDS/PTLS, PTPP JPL
+- [[47_Temuan_dan_Fix_Batch_6|🚀 Temuan & Fix Batch 6]] — audit kelengkapan aset resor, multi-akun persisten, retry HTTP 500, akselerasi simpan paralel, & perbaikan multi-JPL BNR
+- [[48_Rencana_Auto_Update_Server_10.1.37.114|📡 Rencana Auto-Update Server]] — sistem pembaruan otomatis via PC Server 10.1.37.114 (atomic swap updater)
 
 ---
 
