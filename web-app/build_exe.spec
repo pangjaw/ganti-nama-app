@@ -11,6 +11,10 @@ if not dist_dir.is_dir():
 
 datas = [(str(dist_dir), 'dist')]
 
+timemark_dir = Path(_cwd) / 'timemark_engine'
+if timemark_dir.is_dir():
+    datas.append((str(timemark_dir), 'timemark_engine'))
+
 tesseract_dir = Path(r'C:\Program Files\Tesseract-OCR')
 if tesseract_dir.is_dir():
     datas.append((str(tesseract_dir), 'tesseract'))
@@ -34,12 +38,14 @@ a = Analysis(
         'pytesseract', 'pdf2image', 'PIL', 'PIL.ImageOps', 'PIL.Image',
         'tempfile', 'io', 're',
         'requests', 'playwright', 'playwright.sync_api',
+        'fitz', 'pdfplumber', 'pypdf', 'openpyxl', 'numpy',
+        'updater_engine', 'timemark_engine', 'timemark_engine.pipeline_runner',
     ],
     hookspath=[], hooksconfig={}, runtime_hooks=[],
     excludes=[
         'tkinter', 'unittest', 'pdb', 'test',
         'torch', 'torchvision', 'torchaudio',
-        'cv2', 'scipy', 'pandas', 'matplotlib', 'numpy',
+        'cv2', 'scipy', 'pandas', 'matplotlib',
         'transformers', 'sympy', 'IPython', 'jupyter',
         'sklearn', 'scikit_learn', 'nltk', 'spacy',
         'lxml', 'cryptography', 'websockets', 'uvicorn', 'anyio',

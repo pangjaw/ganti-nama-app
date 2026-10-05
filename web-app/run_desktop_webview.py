@@ -20,6 +20,8 @@ import webview
 from pdf2image import convert_from_path
 from PIL import ImageOps, Image
 import pytesseract
+import updater_engine
+from timemark_engine import pipeline_runner
 
 if getattr(sys, 'frozen', False):
     BUNDLE_DIR = sys._MEIPASS
@@ -1327,6 +1329,14 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
             self._handle_get_file(parsed)
         elif parsed.path == "/api/list-folder-pdfs":
             self._handle_list_folder_pdfs(parsed)
+        elif parsed.path == "/api/timemark/status":
+            self._json(pipeline_runner.get_state())
+        elif parsed.path == "/api/update/check":
+            qs = urllib.parse.parse_qs(parsed.query)
+            custom_url = qs.get("url", [None])[0]
+            self._json(updater_engine.check_update(custom_url))
+        elif parsed.path == "/api/update/progress":
+            self._json(updater_engine.get_update_state())
         else:
             super().do_GET()
 
@@ -1410,8 +1420,46 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
         elif parsed.path == "/api/p3ste/cancel":
             _cancel_all_processes()
             self._json({"ok": True})
+        elif parsed.path == "/api/timemark/start":
+            self._handle_timemark_start()
+        elif parsed.path == "/api/timemark/cancel":
+            pipeline_runner.cancel_pipeline()
+            self._json({"ok": True})
+        elif parsed.path == "/api/update/download":
+            self._handle_update_download()
+        elif parsed.path == "/api/update/apply":
+            self._json(updater_engine.apply_update_and_restart())
         else:
             self.send_error(404)
+
+    def _handle_timemark_start(self):
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length)
+            data = json.loads(body) if body else {}
+            res = pipeline_runner.start_pipeline(
+                data.get("sourceDir"),
+                data.get("targetDir"),
+                data.get("exportDir"),
+                data.get("mergedDir"),
+                data.get("steps")
+            )
+            self._json(res)
+        except Exception as e:
+            _log(f"Timemark start error: {e}")
+            self._json({"error": str(e)}, 500)
+
+    def _handle_update_download(self):
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length)
+            data = json.loads(body) if body else {}
+            url = data.get("downloadUrl")
+            res = updater_engine.start_download(url)
+            self._json(res)
+        except Exception as e:
+            _log(f"Update download error: {e}")
+            self._json({"error": str(e)}, 500)
 
     def _handle_save_dialog_file(self):
         try:

@@ -1,0 +1,273 @@
+"""
+pipeline_runner.py — Orchestrator for OCR Foto Timemark & Merge Pipeline (Steps 1 to 5)
+Handles dynamic source, target, export, and merged directories.
+Supports real-time logging, cancellation, and progress updates.
+"""
+import os
+import sys
+import time
+import json
+import shutil
+import subprocess
+import threading
+
+ENGINE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+state = {
+    "running": False,
+    "cancelled": False,
+    "current_step": 0,
+    "step_name": "",
+    "progress": 0,
+    "logs": [],
+    "step_statuses": {
+        "step1": "pending",
+        "step2": "pending",
+        "step3": "pending",
+        "step4": "pending",
+        "step5": "pending",
+    },
+    "error": None,
+    "summary": {},
+    "active_process": None
+}
+
+_state_lock = threading.Lock()
+
+def add_log(log_type, msg):
+    ts = time.strftime("%H:%M:%S")
+    with _state_lock:
+        state["logs"].append({"type": log_type, "msg": msg, "ts": ts})
+        if len(state["logs"]) > 1000:
+            state["logs"] = state["logs"][-800:]
+
+def get_state():
+    with _state_lock:
+        return {
+            "running": state["running"],
+            "cancelled": state["cancelled"],
+            "current_step": state["current_step"],
+            "step_name": state["step_name"],
+            "progress": state["progress"],
+            "logs": list(state["logs"]),
+            "step_statuses": dict(state["step_statuses"]),
+            "error": state["error"],
+            "summary": dict(state["summary"])
+        }
+
+def cancel_pipeline():
+    with _state_lock:
+        state["cancelled"] = True
+        state["running"] = False
+        add_log("warn", "🛑 Menghentikan pipeline...")
+        proc = state.get("active_process")
+        if proc and proc.poll() is None:
+            try:
+                proc.terminate()
+                add_log("info", "Proses aktif berhasil dihentikan.")
+            except Exception as e:
+                add_log("error", f"Gagal menghentikan proses: {e}")
+
+def run_cmd(cmd_list, step_key, step_name):
+    with _state_lock:
+        if state["cancelled"]:
+            return False
+        state["step_statuses"][step_key] = "running"
+        state["step_name"] = step_name
+        add_log("info", f"🚀 Memulai {step_name}...")
+
+    try:
+        env = os.environ.copy()
+        env["PYTHONUNBUFFERED"] = "1"
+        proc = subprocess.Popen(
+            cmd_list,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1,
+            env=env
+        )
+        with _state_lock:
+            state["active_process"] = proc
+
+        for line in proc.stdout:
+            line_str = line.strip()
+            if line_str:
+                if "error" in line_str.lower() or "traceback" in line_str.lower():
+                    add_log("error", line_str)
+                elif "warn" in line_str.lower():
+                    add_log("warn", line_str)
+                elif "success" in line_str.lower() or "selesai" in line_str.lower():
+                    add_log("success", line_str)
+                else:
+                    add_log("info", line_str)
+
+        proc.wait()
+        with _state_lock:
+            state["active_process"] = None
+
+        if state["cancelled"]:
+            with _state_lock:
+                state["step_statuses"][step_key] = "cancelled"
+            return False
+
+        if proc.returncode == 0:
+            with _state_lock:
+                state["step_statuses"][step_key] = "success"
+            add_log("success", f"✓ {step_name} selesai.")
+            return True
+        else:
+            with _state_lock:
+                state["step_statuses"][step_key] = "error"
+                state["error"] = f"{step_name} gagal dengan exit code {proc.returncode}"
+            add_log("error", f"✗ {step_name} gagal (exit code: {proc.returncode})")
+            return False
+    except Exception as e:
+        with _state_lock:
+            state["step_statuses"][step_key] = "error"
+            state["error"] = str(e)
+            state["active_process"] = None
+        add_log("error", f"✗ Galat pada {step_name}: {e}")
+        return False
+
+def _execute_pipeline_task(source_dir, target_dir, export_dir, merged_dir, selected_steps):
+    with _state_lock:
+        state["running"] = True
+        state["cancelled"] = False
+        state["error"] = None
+        state["logs"].clear()
+        state["progress"] = 0
+        for k in state["step_statuses"]:
+            state["step_statuses"][k] = "pending"
+
+    py_exe = sys.executable
+    os.makedirs(export_dir, exist_ok=True)
+    os.makedirs(merged_dir, exist_ok=True)
+
+    sap_mapping = os.path.join(ENGINE_DIR, "sap_station_mapping.json")
+    time_mapping = os.path.join(ENGINE_DIR, "asset_waktu_mapping.json")
+    data_acuan = os.path.join(ENGINE_DIR, "data_acuan_tenaga_gabungan.json")
+    schedule_file = os.path.join(export_dir, "schedule.json")
+    edited_photos_dir = os.path.join(export_dir, "04_photos_edited")
+
+    steps_to_run = selected_steps if isinstance(selected_steps, list) else ["1", "2", "3", "4", "5"]
+
+    total_steps = len(steps_to_run)
+    step_idx = 0
+
+    try:
+        # STEP 1: Ekstraksi Foto
+        if "1" in steps_to_run:
+            step_idx += 1
+            with _state_lock:
+                state["current_step"] = 1
+                state["progress"] = int((step_idx - 1) / total_steps * 100)
+            cmd = [
+                py_exe, os.path.join(ENGINE_DIR, "export_pdf_foto.py"),
+                "--input", source_dir,
+                "--output", export_dir,
+                "--sap-mapping", sap_mapping
+            ]
+            ok = run_cmd(cmd, "step1", "Step 1: Ekstraksi Foto PDF 2026")
+            if not ok:
+                return
+
+        # STEP 2: Ekstraksi Tanggal
+        if "2" in steps_to_run:
+            step_idx += 1
+            with _state_lock:
+                state["current_step"] = 2
+                state["progress"] = int((step_idx - 1) / total_steps * 100)
+            cmd = [
+                py_exe, os.path.join(ENGINE_DIR, "extract_pdf_dates.py"),
+                "--pdf-dir", target_dir,
+                "--output-dir", export_dir
+            ]
+            ok = run_cmd(cmd, "step2", "Step 2: Ekstraksi Tanggal PDF Target 2025")
+            if not ok:
+                return
+
+        # STEP 3: Penjadwalan Tim
+        if "3" in steps_to_run:
+            step_idx += 1
+            with _state_lock:
+                state["current_step"] = 3
+                state["progress"] = int((step_idx - 1) / total_steps * 100)
+            cmd = [
+                py_exe, os.path.join(ENGINE_DIR, "scheduler.py"),
+                "--pdf-dir", target_dir,
+                "--photos-dir", export_dir,
+                "--mapping", time_mapping,
+                "--data-acuan", data_acuan,
+                "--output", schedule_file
+            ]
+            ok = run_cmd(cmd, "step3", "Step 3: Penjadwalan Tim & Alokasi Waktu")
+            if not ok:
+                return
+
+        # STEP 4: Edit Timemark Watermark
+        if "4" in steps_to_run:
+            step_idx += 1
+            with _state_lock:
+                state["current_step"] = 4
+                state["progress"] = int((step_idx - 1) / total_steps * 100)
+            cmd = [
+                py_exe, os.path.join(ENGINE_DIR, "edit_timemark_ide1.py"),
+                "--input", export_dir,
+                "--output", edited_photos_dir,
+                "--schedule", schedule_file,
+                "--detector", "guide"
+            ]
+            ok = run_cmd(cmd, "step4", "Step 4: Edit Watermark Timemark Foto")
+            if not ok:
+                return
+
+        # STEP 5: Penggabungan PDF
+        if "5" in steps_to_run:
+            step_idx += 1
+            with _state_lock:
+                state["current_step"] = 5
+                state["progress"] = int((step_idx - 1) / total_steps * 100)
+            cmd = [
+                py_exe, os.path.join(ENGINE_DIR, "merge_pdf_foto.py"),
+                "--input", target_dir,
+                "--photos", edited_photos_dir,
+                "--output", merged_dir
+            ]
+            ok = run_cmd(cmd, "step5", "Step 5: Penggabungan PDF Final A4")
+            if not ok:
+                return
+
+        with _state_lock:
+            state["progress"] = 100
+            state["running"] = False
+        add_log("success", "🎉 Seluruh tahapan pipeline berhasil diselesaikan!")
+
+    except Exception as e:
+        with _state_lock:
+            state["running"] = False
+            state["error"] = str(e)
+        add_log("error", f"Pipeline terhenti karena galat: {e}")
+    finally:
+        with _state_lock:
+            state["running"] = False
+
+def start_pipeline(source_dir, target_dir, export_dir=None, merged_dir=None, selected_steps=None):
+    if not source_dir or not os.path.isdir(source_dir):
+        return {"ok": False, "error": f"Folder PDF Sumber tidak valid: {source_dir}"}
+    if not target_dir or not os.path.isdir(target_dir):
+        return {"ok": False, "error": f"Folder PDF Target tidak valid: {target_dir}"}
+
+    default_base = os.path.join(os.path.expanduser("~"), "Documents", "Sintelis")
+    if not export_dir:
+        export_dir = os.path.join(default_base, "03_photos_export")
+    if not merged_dir:
+        merged_dir = os.path.join(default_base, "05_pdf_merged")
+
+    t = threading.Thread(
+        target=_execute_pipeline_task,
+        args=(source_dir, target_dir, export_dir, merged_dir, selected_steps),
+        daemon=True
+    )
+    t.start()
+    return {"ok": True, "message": "Pipeline started"}

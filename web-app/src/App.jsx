@@ -9,10 +9,14 @@ import { buildAssetDestination } from './utils/assetFolderMapper';
 import { pickDirectory, writeFileToDir, createZipBlob, triggerDownload, saveFileWithDialog } from './utils/fsHandler';
 import P3STEDownloader from './components/P3STEDownloader';
 import AssetAuditPanel from './components/AssetAuditPanel';
+import TimemarkModule from './components/TimemarkModule';
+import UpdateBanner from './components/UpdateBanner';
+import UpdateModal from './components/UpdateModal';
 import * as XLSX from 'xlsx';
 
 export default function App() {
-  const [mainTab, setMainTab] = useState('ocr'); // 'ocr' | 'downloader'
+  const [mainTab, setMainTab] = useState('ocr'); // 'ocr' | 'downloader' | 'timemark'
+  const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [files, setFiles] = useState([]);
   const [processing, setProcessing] = useState(false);
   const [progress, setProgress] = useState({ current: 0, total: 0 });
@@ -660,8 +664,13 @@ export default function App() {
   return (
     <div className="app-container">
       <header className="app-header">
-        <h1>Sintelis Utility 2.0</h1>
-        <p>Aplikasi OCR Renamer & Downloader Rekap Checklist P3-STE</p>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+          <div>
+            <h1>Sintelis Utility 2.0</h1>
+            <p>Aplikasi OCR Renamer, Downloader Rekap & OCR Foto Timemark P3-STE</p>
+          </div>
+          <UpdateBanner onOpenModal={() => setShowUpdateModal(true)} />
+        </div>
         
         <nav className="main-nav-bar">
           <button
@@ -676,8 +685,19 @@ export default function App() {
           >
             📥 Menu 2: Downloader Rekap P3-STE
           </button>
+          <button
+            className={`nav-tab-btn ${mainTab === 'timemark' ? 'active' : ''}`}
+            onClick={() => setMainTab('timemark')}
+          >
+            🕒 Menu 3: OCR Foto Timemark & Merge
+          </button>
         </nav>
       </header>
+
+      {/* Timemark Tab View (Persisted in DOM) */}
+      <div style={{ display: mainTab === 'timemark' ? 'flex' : 'none', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+        <TimemarkModule />
+      </div>
 
       {/* Downloader Tab View (Persisted in DOM to avoid reset on tab switch) */}
       <div style={{ display: mainTab === 'downloader' ? 'flex' : 'none', flexDirection: 'column', flex: 1, minHeight: 0, overflowY: 'auto' }}>
@@ -938,6 +958,8 @@ export default function App() {
       <footer className="app-footer">
         Sintelis Utility 2.0 — Client-Side (PDF.js + Tesseract.js) & P3-STE Downloader Engine
       </footer>
+
+      <UpdateModal isOpen={showUpdateModal} onClose={() => setShowUpdateModal(false)} />
     </div>
   );
 }
