@@ -9,12 +9,15 @@ import io
 import json
 import os
 import time
+from datetime import datetime
 import re
 import socketserver
 import sys
 import tempfile
 import threading
 import urllib.parse
+import shutil
+import subprocess
 
 import webview
 from pdf2image import convert_from_path
@@ -31,6 +34,10 @@ else:
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DIST_DIR = os.path.join(BUNDLE_DIR, "dist")
 PORT = 18725
+
+ENGINE_DIR = os.path.join(BUNDLE_DIR, "timemark_engine")
+if not os.path.isdir(ENGINE_DIR):
+    ENGINE_DIR = os.path.join(BASE_DIR, "timemark_engine")
 
 def get_tesseract_cmd():
     candidates = [
@@ -1331,6 +1338,12 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
             self._handle_list_folder_pdfs(parsed)
         elif parsed.path == "/api/timemark/status":
             self._json(pipeline_runner.get_state())
+        elif parsed.path == "/api/timemark/photos":
+            self._handle_timemark_photos(parsed)
+        elif parsed.path == "/api/timemark/photo-file":
+            self._handle_timemark_photo_file(parsed)
+        elif parsed.path == "/api/timemark/pegawai":
+            self._handle_timemark_pegawai_get()
         elif parsed.path == "/api/update/check":
             qs = urllib.parse.parse_qs(parsed.query)
             custom_url = qs.get("url", [None])[0]
@@ -1425,6 +1438,24 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
         elif parsed.path == "/api/timemark/cancel":
             pipeline_runner.cancel_pipeline()
             self._json({"ok": True})
+        elif parsed.path == "/api/timemark/edit-time":
+            self._handle_timemark_edit_time()
+        elif parsed.path == "/api/timemark/edit-coord":
+            self._handle_timemark_edit_coord()
+        elif parsed.path == "/api/timemark/replace-photo":
+            self._handle_timemark_replace_photo()
+        elif parsed.path == "/api/timemark/pegawai":
+            self._handle_timemark_pegawai_post()
+        elif parsed.path == "/api/timemark/koreksi-serat-optik":
+            self._handle_timemark_koreksi_serat_optik()
+        elif parsed.path == "/api/timemark/audit-personil":
+            self._handle_timemark_audit_personil()
+        elif parsed.path == "/api/timemark/export-tablo":
+            self._handle_timemark_export_tablo()
+        elif parsed.path == "/api/timemark/export-dinasan":
+            self._handle_timemark_export_dinasan()
+        elif parsed.path == "/api/timemark/open-file":
+            self._handle_timemark_open_file()
         elif parsed.path == "/api/update/download":
             self._handle_update_download()
         elif parsed.path == "/api/update/apply":
@@ -1442,12 +1473,449 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
                 data.get("targetDir"),
                 data.get("exportDir"),
                 data.get("mergedDir"),
-                data.get("steps")
+                data.get("steps"),
+                data.get("mode", "dual"),
+                data.get("overwriteOriginal", False)
             )
             self._json(res)
         except Exception as e:
             _log(f"Timemark start error: {e}")
             self._json({"error": str(e)}, 500)
+
+    def _handle_timemark_photos(self, parsed):
+        try:
+            qs = urllib.parse.parse_qs(parsed.query)
+            folder = qs.get("folder", [""])[0]
+            if not folder or not os.path.isdir(folder):
+                self._json({"ok": True, "assets": []})
+                return
+
+            assets = []
+            for root, dirs, files in os.walk(folder):
+                photo_files = [f for f in files if f.lower() in ("0.jpg", "50.jpg", "100.jpg")]
+                if not photo_files:
+                    continue
+
+                rel_path = os.path.relpath(root, folder).replace("\\", "/")
+                parts = [p for p in rel_path.split("/") if p]
+                if not parts:
+                    continue
+
+                detail = parts[-1]
+                category = parts[-2] if len(parts) >= 2 else "ASET"
+                station = parts[-3] if len(parts) >= 3 else (parts[0] if len(parts) >= 1 else "STN")
+                if station.lower().startswith("tim_") and len(parts) >= 4:
+                    station = parts[-3]
+                    category = parts[-2]
+
+                date_text = ""
+                date_file = os.path.join(root, "date.txt")
+                if os.path.isfile(date_file):
+                    try:
+                        with open(date_file, "r", encoding="utf-8", errors="ignore") as df:
+                            date_text = df.read().strip()
+                    except Exception:
+                        pass
+
+                photos = []
+                for p_name in ["0.jpg", "50.jpg", "100.jpg"]:
+                    p_file = os.path.join(root, p_name)
+                    if os.path.isfile(p_file):
+                        photos.append({
+                            "name": p_name,
+                            "url": f"/api/timemark/photo-file?path={urllib.parse.quote(os.path.abspath(p_file))}"
+                        })
+
+                assets.append({
+                    "station": station,
+                    "category": category,
+                    "detail": detail,
+                    "relPath": rel_path,
+                    "dateText": date_text,
+                    "photos": photos
+                })
+
+            assets.sort(key=lambda a: (a["station"], a["category"], a["detail"]))
+            self._json({"ok": True, "assets": assets})
+        except Exception as e:
+            _log(f"Error scanning photos: {e}")
+            self._json({"ok": False, "error": str(e)}, 500)
+
+    def _handle_timemark_photo_file(self, parsed):
+        try:
+            qs = urllib.parse.parse_qs(parsed.query)
+            file_path = qs.get("path", [""])[0]
+            if not file_path or not os.path.isfile(file_path):
+                self.send_error(404, "Berkas foto tidak ditemukan")
+                return
+            with open(file_path, "rb") as f:
+                content = f.read()
+            self.send_response(200)
+            self.send_header("Content-Type", "image/jpeg")
+            self.send_header("Content-Length", str(len(content)))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.end_headers()
+            self.wfile.write(content)
+        except Exception as e:
+            self.send_error(500, str(e))
+
+    def _handle_timemark_pegawai_get(self):
+        try:
+            pegawai_file = os.path.join(ENGINE_DIR, "daftar_pegawai.json")
+            presets_file = os.path.join(ENGINE_DIR, "employee_presets.json")
+
+            daftar_pegawai = {}
+            if os.path.isfile(pegawai_file):
+                with open(pegawai_file, "r", encoding="utf-8") as f:
+                    daftar_pegawai = json.load(f)
+
+            presets_data = {}
+            if os.path.isfile(presets_file):
+                with open(presets_file, "r", encoding="utf-8") as f:
+                    presets_data = json.load(f)
+
+            self._json({
+                "ok": True,
+                "daftar_pegawai": daftar_pegawai,
+                "presets": presets_data.get("presets", []),
+                "active_preset_id": presets_data.get("active_preset_id", "")
+            })
+        except Exception as e:
+            _log(f"Get pegawai error: {e}")
+            self._json({"ok": False, "error": str(e)}, 500)
+
+    def _handle_timemark_pegawai_post(self):
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length)
+            data = json.loads(body) if body else {}
+
+            pegawai_file = os.path.join(ENGINE_DIR, "daftar_pegawai.json")
+            presets_file = os.path.join(ENGINE_DIR, "employee_presets.json")
+
+            if "daftar_pegawai" in data:
+                with open(pegawai_file, "w", encoding="utf-8") as f:
+                    json.dump(data["daftar_pegawai"], f, indent=2, ensure_ascii=False)
+
+            if "presets" in data or "active_preset_id" in data:
+                existing_presets = {}
+                if os.path.isfile(presets_file):
+                    try:
+                        with open(presets_file, "r", encoding="utf-8") as f:
+                            existing_presets = json.load(f)
+                    except Exception:
+                        pass
+                if "presets" in data:
+                    existing_presets["presets"] = data["presets"]
+                if "active_preset_id" in data:
+                    existing_presets["active_preset_id"] = data["active_preset_id"]
+                with open(presets_file, "w", encoding="utf-8") as f:
+                    json.dump(existing_presets, f, indent=2, ensure_ascii=False)
+
+            self._json({"ok": True, "message": "Profil pegawai berhasil disimpan."})
+        except Exception as e:
+            _log(f"Save pegawai error: {e}")
+            self._json({"ok": False, "error": str(e)}, 500)
+
+    def _handle_timemark_edit_time(self):
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length)
+            data = json.loads(body) if body else {}
+            base_dir = data.get("baseExportDir", "")
+            rel_path = data.get("assetRelPath", "")
+            new_date = data.get("newDateText", "").strip()
+            if not base_dir or not rel_path or not new_date:
+                self._json({"ok": False, "error": "Parameter tidak lengkap."}, 400)
+                return
+
+            target_folder = os.path.normpath(os.path.join(base_dir, rel_path))
+            if not os.path.isdir(target_folder):
+                self._json({"ok": False, "error": "Folder aset tidak ditemukan."}, 404)
+                return
+
+            date_file = os.path.join(target_folder, "date.txt")
+            with open(date_file, "w", encoding="utf-8") as df:
+                df.write(new_date + "\n")
+
+            cmd = [
+                sys.executable,
+                os.path.join(ENGINE_DIR, "edit_timemark_ide1.py"),
+                "--input", target_folder,
+                "--date", new_date,
+                "--detector", "guide"
+            ]
+            subprocess.run(cmd, capture_output=True, text=True, cwd=BASE_DIR)
+            self._json({"ok": True, "message": "Waktu timemark berhasil diperbarui."})
+        except Exception as e:
+            _log(f"Edit time error: {e}")
+            self._json({"ok": False, "error": str(e)}, 500)
+
+    def _handle_timemark_edit_coord(self):
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length)
+            data = json.loads(body) if body else {}
+            base_dir = data.get("baseExportDir", "")
+            rel_path = data.get("assetRelPath", "")
+            photo_name = data.get("photoName", "0.jpg")
+            y_override = int(data.get("yOverride", 195))
+
+            target_photo = os.path.normpath(os.path.join(base_dir, rel_path, photo_name))
+            if not os.path.isfile(target_photo):
+                self._json({"ok": False, "error": "Berkas foto tidak ditemukan."}, 404)
+                return
+
+            cmd = [
+                sys.executable,
+                os.path.join(ENGINE_DIR, "edit_timemark_ide1.py"),
+                "--input", target_photo,
+                "--y-override", str(y_override),
+                "--detector", "guide"
+            ]
+            subprocess.run(cmd, capture_output=True, text=True, cwd=BASE_DIR)
+            self._json({"ok": True, "message": f"Koordinat y={y_override} berhasil diterapkan."})
+        except Exception as e:
+            _log(f"Edit coord error: {e}")
+            self._json({"ok": False, "error": str(e)}, 500)
+
+    def _handle_timemark_replace_photo(self):
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length)
+            data = json.loads(body) if body else {}
+            base_dir = data.get("baseExportDir", "")
+            rel_path = data.get("assetRelPath", "")
+            photo_name = data.get("photoName", "0.jpg")
+            img_b64 = data.get("imageBase64", "")
+
+            if not img_b64:
+                self._json({"ok": False, "error": "Data gambar kosong."}, 400)
+                return
+
+            target_photo = os.path.normpath(os.path.join(base_dir, rel_path, photo_name))
+            if not os.path.isfile(target_photo):
+                self._json({"ok": False, "error": "Berkas foto tujuan tidak ditemukan."}, 404)
+                return
+
+            backup_file = target_photo + ".original_backup.jpg"
+            if not os.path.isfile(backup_file):
+                shutil.copy2(target_photo, backup_file)
+
+            raw_bytes = base64.b64decode(img_b64)
+            with open(target_photo, "wb") as pf:
+                pf.write(raw_bytes)
+
+            cmd = [
+                sys.executable,
+                os.path.join(ENGINE_DIR, "edit_timemark_ide1.py"),
+                "--input", target_photo,
+                "--detector", "guide"
+            ]
+            subprocess.run(cmd, capture_output=True, text=True, cwd=BASE_DIR)
+            self._json({"ok": True, "message": "Foto berhasil diganti dan di-watermark ulang."})
+        except Exception as e:
+            _log(f"Replace photo error: {e}")
+            self._json({"ok": False, "error": str(e)}, 500)
+
+    def _handle_timemark_koreksi_serat_optik(self):
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length)
+            data = json.loads(body) if body else {}
+            folder = data.get("folder", "")
+            apply_corr = bool(data.get("apply", False))
+
+            if not folder or not os.path.isdir(folder):
+                self._json({"ok": False, "error": "Folder PDF tidak valid."}, 400)
+                return
+
+            cmd = [
+                sys.executable,
+                os.path.join(ENGINE_DIR, "correct_serat_optik_cores.py"),
+                "--folders", folder,
+                "--json"
+            ]
+            if apply_corr:
+                cmd.append("--apply")
+
+            res = subprocess.run(cmd, capture_output=True, text=True, cwd=BASE_DIR)
+            items = []
+            if res.stdout:
+                try:
+                    items = json.loads(res.stdout)
+                except Exception:
+                    match = re.search(r'\[\s*\{.*\}\s*\]', res.stdout, re.DOTALL)
+                    if match:
+                        items = json.loads(match.group(0))
+
+            self._json({"ok": True, "items": items})
+        except Exception as e:
+            _log(f"Koreksi serat optik error: {e}")
+            self._json({"ok": False, "error": str(e)}, 500)
+
+    def _handle_timemark_audit_personil(self):
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length)
+            data = json.loads(body) if body else {}
+            folder = data.get("folder", "")
+            action = data.get("action", "audit")
+
+            if not folder or not os.path.isdir(folder):
+                self._json({"ok": False, "error": "Folder PDF tidak valid."}, 400)
+                return
+
+            cmd = [
+                sys.executable,
+                os.path.join(ENGINE_DIR, "audit_and_correct_personnel.py"),
+                "--folder", folder,
+                "--action", action
+            ]
+            res = subprocess.run(cmd, capture_output=True, text=True, cwd=BASE_DIR)
+            report = {}
+            if res.stdout:
+                try:
+                    report = json.loads(res.stdout)
+                except Exception:
+                    match = re.search(r'\{.*\}', res.stdout, re.DOTALL)
+                    if match:
+                        report = json.loads(match.group(0))
+
+            self._json({"ok": True, "result": report})
+        except Exception as e:
+            _log(f"Audit personil error: {e}")
+            self._json({"ok": False, "error": str(e)}, 500)
+
+    def _handle_timemark_export_tablo(self):
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length)
+            data = json.loads(body) if body else {}
+            folder = data.get("folder")
+            export_dir = data.get("exportDir")
+            year = data.get("year")
+            month = data.get("month")
+
+            out_dir = os.path.join(BASE_DIR, "logs")
+            os.makedirs(out_dir, exist_ok=True)
+
+            cmd = [
+                sys.executable,
+                os.path.join(ENGINE_DIR, "export_tablo_excel.py"),
+                "--output-dir", out_dir
+            ]
+            if year:
+                cmd.extend(["--year", str(year)])
+            if month:
+                cmd.extend(["--month", str(month)])
+
+            if folder and os.path.isdir(folder):
+                cmd.extend(["--mode", "custom", "--folder", folder])
+            elif export_dir and os.path.isfile(os.path.join(export_dir, "schedule.json")):
+                cmd.extend(["--mode", "pipeline", "--schedule", os.path.join(export_dir, "schedule.json")])
+
+            res = subprocess.run(cmd, capture_output=True, text=True, cwd=BASE_DIR)
+            file_path = None
+            if res.stdout:
+                for line in res.stdout.splitlines():
+                    if "[OUTPUT_FILE]" in line:
+                        file_path = line.replace("[OUTPUT_FILE]", "").strip()
+                        break
+
+            if not file_path:
+                cand = [os.path.join(out_dir, f) for f in os.listdir(out_dir) if f.startswith("TABLO") and f.endswith(".xlsx")]
+                if cand:
+                    cand.sort(key=os.path.getmtime, reverse=True)
+                    file_path = cand[0]
+
+            if file_path and os.path.isfile(file_path):
+                self._json({"ok": True, "filePath": file_path})
+            else:
+                self._json({"ok": False, "error": res.stderr or "Gagal membuat berkas Tablo Excel."})
+        except Exception as e:
+            _log(f"Export tablo error: {e}")
+            self._json({"ok": False, "error": str(e)}, 500)
+
+    def _handle_timemark_export_dinasan(self):
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length)
+            data = json.loads(body) if body else {}
+            folder = data.get("folder")
+            export_dir = data.get("exportDir")
+            year = data.get("year", datetime.now().year)
+            month = data.get("month", datetime.now().month)
+            with_personnel = data.get("withPersonnel", True)
+
+            out_dir = os.path.join(BASE_DIR, "logs")
+            os.makedirs(out_dir, exist_ok=True)
+            month_str = f"{year}-{int(month):02d}"
+
+            sch_path = None
+            if export_dir and os.path.isfile(os.path.join(export_dir, "schedule.json")):
+                sch_path = os.path.join(export_dir, "schedule.json")
+            elif folder and os.path.isdir(folder):
+                temp_sch = os.path.join(out_dir, "temp_dinasan_schedule.json")
+                subprocess.run([
+                    sys.executable, os.path.join(ENGINE_DIR, "scheduler.py"),
+                    "--pdf-dir", folder,
+                    "--output", temp_sch
+                ], capture_output=True, text=True, cwd=BASE_DIR)
+                if os.path.isfile(temp_sch):
+                    sch_path = temp_sch
+
+            if not sch_path:
+                sch_path = os.path.join(out_dir, "temp_dinasan_schedule.json")
+
+            cmd = [
+                sys.executable,
+                os.path.join(ENGINE_DIR, "export_dinasan_excel.py"),
+                "--month", month_str,
+                "--schedule", sch_path,
+                "--config", os.path.join(ENGINE_DIR, "daftar_pegawai.json")
+            ]
+            if with_personnel:
+                cmd.append("--with-personnel")
+
+            res = subprocess.run(cmd, capture_output=True, text=True, cwd=BASE_DIR)
+            file_path = None
+            if res.stdout:
+                for line in res.stdout.splitlines():
+                    if "->" in line:
+                        file_path = line.split("->")[-1].strip()
+                        break
+
+            if not file_path:
+                cand = [os.path.join(out_dir, f) for f in os.listdir(out_dir) if "DAFTAR_DINASAN_PEGAWAI" in f and f.endswith(".xlsx")]
+                if cand:
+                    cand.sort(key=os.path.getmtime, reverse=True)
+                    file_path = cand[0]
+
+            if file_path and os.path.isfile(file_path):
+                self._json({"ok": True, "filePath": file_path})
+            else:
+                self._json({"ok": False, "error": res.stderr or "Gagal membuat berkas Jadwal Dinasan Excel."})
+        except Exception as e:
+            _log(f"Export dinasan error: {e}")
+            self._json({"ok": False, "error": str(e)}, 500)
+
+    def _handle_timemark_open_file(self):
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length)
+            data = json.loads(body) if body else {}
+            file_path = data.get("filePath", "")
+            if not file_path or not os.path.exists(file_path):
+                self._json({"ok": False, "error": "Berkas tidak ditemukan."}, 404)
+                return
+
+            norm = os.path.normpath(file_path)
+            os.startfile(norm)
+            self._json({"ok": True})
+        except Exception as e:
+            _log(f"Open file error: {e}")
+            self._json({"ok": False, "error": str(e)}, 500)
 
     def _handle_update_download(self):
         try:

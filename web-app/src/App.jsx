@@ -667,7 +667,7 @@ export default function App() {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
           <div>
             <h1>Sintelis Utility 2.0</h1>
-            <p>Aplikasi OCR Renamer, Downloader Rekap & OCR Foto Timemark P3-STE</p>
+            <p>Aplikasi OCR Renamer, Downloader Rekap & Edit Foto Ceklis P3-STE</p>
           </div>
           <UpdateBanner onOpenModal={() => setShowUpdateModal(true)} />
         </div>
@@ -689,7 +689,7 @@ export default function App() {
             className={`nav-tab-btn ${mainTab === 'timemark' ? 'active' : ''}`}
             onClick={() => setMainTab('timemark')}
           >
-            🕒 Menu 3: OCR Foto Timemark & Merge
+            📸 Menu 3: Edit Foto Ceklis P3-STE
           </button>
         </nav>
       </header>

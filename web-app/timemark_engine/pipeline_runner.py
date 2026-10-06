@@ -1,6 +1,7 @@
 """
 pipeline_runner.py — Orchestrator for OCR Foto Timemark & Merge Pipeline (Steps 1 to 5)
 Handles dynamic source, target, export, and merged directories.
+Supports Single Folder Mode (1 folder sumber) & Dual Folder Mode (2 folder sumber).
 Supports real-time logging, cancellation, and progress updates.
 """
 import os
@@ -107,13 +108,12 @@ def run_cmd(cmd_list, step_key, step_name):
             state["active_process"] = None
 
         if state["cancelled"]:
-            with _state_lock:
-                state["step_statuses"][step_key] = "cancelled"
+            add_log("warn", f"⚠️ {step_name} dibatalkan pengguna.")
             return False
 
         if proc.returncode == 0:
             with _state_lock:
-                state["step_statuses"][step_key] = "success"
+                state["step_statuses"][step_key] = "done"
             add_log("success", f"✓ {step_name} selesai.")
             return True
         else:
@@ -130,7 +130,7 @@ def run_cmd(cmd_list, step_key, step_name):
         add_log("error", f"✗ Galat pada {step_name}: {e}")
         return False
 
-def _execute_pipeline_task(source_dir, target_dir, export_dir, merged_dir, selected_steps):
+def _execute_pipeline_task(source_dir, target_dir, export_dir, merged_dir, selected_steps, mode="dual", overwrite_original=False):
     with _state_lock:
         state["running"] = True
         state["cancelled"] = False
@@ -151,9 +151,26 @@ def _execute_pipeline_task(source_dir, target_dir, export_dir, merged_dir, selec
     edited_photos_dir = os.path.join(export_dir, "04_photos_edited")
 
     steps_to_run = selected_steps if isinstance(selected_steps, list) else ["1", "2", "3", "4", "5"]
-
     total_steps = len(steps_to_run)
     step_idx = 0
+
+    mode_label = "Mode 1 Folder Sumber" if mode == "single" else "Mode 2 Folder Sumber (Klasik)"
+    add_log("info", f"📌 Menjalankan pipeline dalam {mode_label}...")
+    if mode == "single":
+        add_log("info", f"📂 Folder Dokumen Tunggal: {source_dir}")
+        if overwrite_original:
+            add_log("warn", "⚠️ Mode Timpa Asli aktif: Berkas asli akan dicadangkan ke subfolder backups/ sebelum digabung.")
+    else:
+        add_log("info", f"📂 Folder Sumber (2026): {source_dir}")
+        add_log("info", f"📂 Folder Target (2025): {target_dir}")
+
+    # Tentukan folder output akhir untuk step 5
+    actual_step5_output = merged_dir
+    temp_merge_dir = None
+    if mode == "single" and overwrite_original:
+        temp_merge_dir = os.path.join(export_dir, "_temp_merged")
+        os.makedirs(temp_merge_dir, exist_ok=True)
+        actual_step5_output = temp_merge_dir
 
     try:
         # STEP 1: Ekstraksi Foto
@@ -168,7 +185,7 @@ def _execute_pipeline_task(source_dir, target_dir, export_dir, merged_dir, selec
                 "--output", export_dir,
                 "--sap-mapping", sap_mapping
             ]
-            ok = run_cmd(cmd, "step1", "Step 1: Ekstraksi Foto PDF 2026")
+            ok = run_cmd(cmd, "step1", f"Step 1: Ekstraksi Foto ({'PDF Sumber' if mode == 'single' else 'PDF 2026'})")
             if not ok:
                 return
 
@@ -183,7 +200,7 @@ def _execute_pipeline_task(source_dir, target_dir, export_dir, merged_dir, selec
                 "--pdf-dir", target_dir,
                 "--output-dir", export_dir
             ]
-            ok = run_cmd(cmd, "step2", "Step 2: Ekstraksi Tanggal PDF Target 2025")
+            ok = run_cmd(cmd, "step2", f"Step 2: Ekstraksi Tanggal ({'PDF Sumber' if mode == 'single' else 'PDF Target 2025'})")
             if not ok:
                 return
 
@@ -228,15 +245,49 @@ def _execute_pipeline_task(source_dir, target_dir, export_dir, merged_dir, selec
             with _state_lock:
                 state["current_step"] = 5
                 state["progress"] = int((step_idx - 1) / total_steps * 100)
+
+            # Jika mode timpa berkas aktif, lakukan backup otomatis terlebih dahulu
+            if mode == "single" and overwrite_original:
+                ts_str = time.strftime("%Y%m%d_%H%M%S")
+                backup_folder = os.path.join(source_dir, "backups", f"backup_{ts_str}")
+                os.makedirs(backup_folder, exist_ok=True)
+                add_log("info", f"💾 Membuat salinan cadangan otomatis di: {backup_folder}...")
+                pdf_files = [f for f in os.listdir(source_dir) if f.lower().endswith(".pdf")]
+                for pf in pdf_files:
+                    try:
+                        shutil.copy2(os.path.join(source_dir, pf), os.path.join(backup_folder, pf))
+                    except Exception as be:
+                        add_log("warn", f"Gagal mencadangkan {pf}: {be}")
+                add_log("success", f"✓ {len(pdf_files)} berkas PDF berhasil dicadangkan dengan aman.")
+
             cmd = [
                 py_exe, os.path.join(ENGINE_DIR, "merge_pdf_foto.py"),
                 "--input", target_dir,
                 "--photos", edited_photos_dir,
-                "--output", merged_dir
+                "--output", actual_step5_output
             ]
             ok = run_cmd(cmd, "step5", "Step 5: Penggabungan PDF Final A4")
             if not ok:
                 return
+
+            # Jika overwrite aktif, pindahkan hasil dari temp_merge_dir ke source_dir
+            if mode == "single" and overwrite_original and temp_merge_dir:
+                add_log("info", f"🔄 Memperbarui berkas di folder sumber: {source_dir}...")
+                merged_files = [f for f in os.listdir(temp_merge_dir) if f.lower().endswith(".pdf")]
+                replaced_count = 0
+                for mf in merged_files:
+                    src_m = os.path.join(temp_merge_dir, mf)
+                    dst_m = os.path.join(source_dir, mf)
+                    try:
+                        shutil.copy2(src_m, dst_m)
+                        replaced_count += 1
+                    except Exception as re:
+                        add_log("warn", f"Gagal menimpa {mf}: {re}")
+                add_log("success", f"✓ Berhasil menimpa {replaced_count} berkas PDF di folder sumber dengan hasil foto terbaru.")
+                try:
+                    shutil.rmtree(temp_merge_dir)
+                except Exception:
+                    pass
 
         with _state_lock:
             state["progress"] = 100
@@ -252,11 +303,15 @@ def _execute_pipeline_task(source_dir, target_dir, export_dir, merged_dir, selec
         with _state_lock:
             state["running"] = False
 
-def start_pipeline(source_dir, target_dir, export_dir=None, merged_dir=None, selected_steps=None):
+def start_pipeline(source_dir, target_dir=None, export_dir=None, merged_dir=None, selected_steps=None, mode="dual", overwrite_original=False):
     if not source_dir or not os.path.isdir(source_dir):
         return {"ok": False, "error": f"Folder PDF Sumber tidak valid: {source_dir}"}
-    if not target_dir or not os.path.isdir(target_dir):
-        return {"ok": False, "error": f"Folder PDF Target tidak valid: {target_dir}"}
+
+    if mode == "single":
+        target_dir = source_dir
+    else:
+        if not target_dir or not os.path.isdir(target_dir):
+            return {"ok": False, "error": f"Folder PDF Target tidak valid: {target_dir}"}
 
     default_base = os.path.join(os.path.expanduser("~"), "Documents", "Sintelis")
     if not export_dir:
@@ -266,8 +321,8 @@ def start_pipeline(source_dir, target_dir, export_dir=None, merged_dir=None, sel
 
     t = threading.Thread(
         target=_execute_pipeline_task,
-        args=(source_dir, target_dir, export_dir, merged_dir, selected_steps),
+        args=(source_dir, target_dir, export_dir, merged_dir, selected_steps, mode, overwrite_original),
         daemon=True
     )
     t.start()
-    return {"ok": True, "message": "Pipeline started"}
+    return {"ok": True, "message": "Pipeline started", "mode": mode}
