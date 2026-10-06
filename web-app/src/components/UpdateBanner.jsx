@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 
-export default function UpdateBanner({ onOpenModal }) {
+export default function UpdateBanner({ onOpenModal, onAutoOpen }) {
   const [updateInfo, setUpdateInfo] = useState(null);
 
   useEffect(() => {
@@ -13,6 +13,9 @@ export default function UpdateBanner({ onOpenModal }) {
           const data = await res.json();
           if (data.updateAvailable) {
             setUpdateInfo(data);
+            if (onAutoOpen) {
+              onAutoOpen(data);
+            }
           }
         }
       } catch (e) {

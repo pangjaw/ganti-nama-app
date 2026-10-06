@@ -45,46 +45,51 @@ def check_update(custom_url=None):
         _update_state["status"] = "checking"
         _update_state["error"] = None
 
-    try:
-        req = urllib.request.Request(
-            url,
-            headers={"User-Agent": "SintelisUtility-Client/1.5.1"}
-        )
-        with urllib.request.urlopen(req, timeout=3.5) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
+    last_err = None
+    for attempt in range(2):
+        try:
+            req = urllib.request.Request(
+                url,
+                headers={"User-Agent": "SintelisUtility-Client/1.5.1"}
+            )
+            with urllib.request.urlopen(req, timeout=10.0) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
 
-        server_ver = data.get("version", "0.0.0")
-        is_newer = parse_semver(server_ver) > parse_semver(APP_VERSION)
+            server_ver = data.get("version", "0.0.0")
+            is_newer = parse_semver(server_ver) > parse_semver(APP_VERSION)
 
-        with _update_lock:
-            _update_state["server_version"] = server_ver
-            _update_state["download_url"] = data.get("downloadUrl")
-            _update_state["changelog"] = data.get("changelog", [])
-            _update_state["file_size"] = data.get("fileSize", 0)
-            if is_newer:
-                _update_state["status"] = "available"
-            else:
-                _update_state["status"] = "idle"
+            with _update_lock:
+                _update_state["server_version"] = server_ver
+                _update_state["download_url"] = data.get("downloadUrl")
+                _update_state["changelog"] = data.get("changelog", [])
+                _update_state["file_size"] = data.get("fileSize", 0)
+                if is_newer:
+                    _update_state["status"] = "available"
+                else:
+                    _update_state["status"] = "idle"
 
-        return {
-            "updateAvailable": is_newer,
-            "currentVersion": APP_VERSION,
-            "serverVersion": server_ver,
-            "changelog": data.get("changelog", []),
-            "downloadUrl": data.get("downloadUrl"),
-            "fileSize": data.get("fileSize", 0),
-            "releaseDate": data.get("releaseDate", "")
-        }
-    except Exception as e:
-        with _update_lock:
-            _update_state["status"] = "error"
-            _update_state["error"] = str(e)
-        return {
-            "updateAvailable": False,
-            "currentVersion": APP_VERSION,
-            "error": str(e),
-            "offline": True
-        }
+            return {
+                "updateAvailable": is_newer,
+                "currentVersion": APP_VERSION,
+                "serverVersion": server_ver,
+                "changelog": data.get("changelog", []),
+                "downloadUrl": data.get("downloadUrl"),
+                "fileSize": data.get("fileSize", 0),
+                "releaseDate": data.get("releaseDate", "")
+            }
+        except Exception as e:
+            last_err = e
+            time.sleep(0.5)
+
+    with _update_lock:
+        _update_state["status"] = "error"
+        _update_state["error"] = str(last_err)
+    return {
+        "updateAvailable": False,
+        "currentVersion": APP_VERSION,
+        "error": str(last_err),
+        "offline": True
+    }
 
 def _download_task(download_url):
     temp_dir = tempfile.gettempdir()

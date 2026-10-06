@@ -669,7 +669,32 @@ export default function App() {
             <h1>Sintelis Utility 2.0</h1>
             <p>Aplikasi OCR Renamer, Downloader Rekap & Edit Foto Ceklis P3-STE</p>
           </div>
-          <UpdateBanner onOpenModal={() => setShowUpdateModal(true)} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+            <UpdateBanner
+              onOpenModal={() => setShowUpdateModal(true)}
+              onAutoOpen={() => setShowUpdateModal(true)}
+            />
+            <button
+              type="button"
+              onClick={() => setShowUpdateModal(true)}
+              style={{
+                padding: '0.4rem 0.8rem',
+                background: 'var(--bg-secondary)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '6px',
+                color: 'var(--text-secondary)',
+                fontSize: '0.8rem',
+                fontWeight: 500,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.35rem'
+              }}
+              title="Periksa pembaruan versi aplikasi secara manual"
+            >
+              <span>🔄</span> Cek Pembaruan
+            </button>
+          </div>
         </div>
         
         <nav className="main-nav-bar">
