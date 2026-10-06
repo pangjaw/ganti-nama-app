@@ -5,14 +5,11 @@ export default function ExcelExportPanel({ targetDir, exportDir }) {
   const currentMonth = new Date().getMonth() + 1;
 
   const [selectedSourceDir, setSelectedSourceDir] = useState(targetDir || exportDir || '');
-  const [tabloYear, setTabloYear] = useState(currentYear);
-  const [tabloMonth, setTabloMonth] = useState(currentMonth);
-  const [tabloGenerating, setTabloGenerating] = useState(false);
-
-  const [dinasanYear, setDinasanYear] = useState(currentYear);
-  const [dinasanMonth, setDinasanMonth] = useState(currentMonth);
+  const [exportYear, setExportYear] = useState(currentYear);
+  const [exportMonth, setExportMonth] = useState(currentMonth);
+  const [exportDocType, setExportDocType] = useState('both'); // 'both' | 'tablo' | 'dinasan'
   const [withPersonnel, setWithPersonnel] = useState(true);
-  const [dinasanGenerating, setDinasanGenerating] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
 
   const [historyFiles, setHistoryFiles] = useState([]);
   const [feedback, setFeedback] = useState(null);
@@ -60,80 +57,82 @@ export default function ExcelExportPanel({ targetDir, exportDir }) {
     }
   };
 
-  // 1. Ekspor Tablo Checklist
-  const handleExportTablo = async () => {
+  // Ekspor Dokumen Tunggal / Keduanya
+  const handleExport = async () => {
     const effectiveFolder = selectedSourceDir || targetDir || exportDir;
     if (!effectiveFolder) {
       alert('Silakan tentukan Folder atau Berkas Sumber terlebih dahulu!');
       return;
     }
-    setTabloGenerating(true);
+
+    setIsGenerating(true);
     setFeedback(null);
+    const newFiles = [];
+    const successMessages = [];
+
     try {
-      const res = await fetch('/api/timemark/export-tablo', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          folder: effectiveFolder,
-          exportDir: exportDir || effectiveFolder,
-          year: tabloYear,
-          month: tabloMonth
-        })
-      });
-      const data = await res.json();
-      if (res.ok && data.ok) {
-        setFeedback({ type: 'success', text: `✓ Berkas Tablo Checklist berhasil dibuat: ${data.filePath}` });
-        if (data.filePath) {
-          setHistoryFiles(prev => [data.filePath, ...prev.filter(f => f !== data.filePath)]);
+      // 1. Ekspor Tablo jika dipilih 'both' atau 'tablo'
+      if (exportDocType === 'both' || exportDocType === 'tablo') {
+        const resTablo = await fetch('/api/timemark/export-tablo', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            folder: effectiveFolder,
+            exportDir: exportDir || effectiveFolder,
+            year: exportYear,
+            month: exportMonth
+          })
+        });
+        const dataTablo = await resTablo.json();
+        if (resTablo.ok && dataTablo.ok) {
+          successMessages.push(`✓ Tablo Checklist: ${dataTablo.filePath}`);
+          if (dataTablo.filePath) newFiles.push(dataTablo.filePath);
+        } else {
+          throw new Error(`Gagal membuat Tablo: ${dataTablo.error || 'Terjadi kesalahan'}`);
         }
-      } else {
-        setFeedback({ type: 'error', text: 'Gagal membuat Tablo: ' + (data.error || 'Terjadi kesalahan') });
+      }
+
+      // 2. Ekspor Jadwal Dinasan jika dipilih 'both' atau 'dinasan'
+      if (exportDocType === 'both' || exportDocType === 'dinasan') {
+        const resDinasan = await fetch('/api/timemark/export-dinasan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            folder: effectiveFolder,
+            exportDir: exportDir || effectiveFolder,
+            year: exportYear,
+            month: exportMonth,
+            withPersonnel
+          })
+        });
+        const dataDinasan = await resDinasan.json();
+        if (resDinasan.ok && dataDinasan.ok) {
+          successMessages.push(`✓ Jadwal Dinasan: ${dataDinasan.filePath}`);
+          if (dataDinasan.filePath) newFiles.push(dataDinasan.filePath);
+        } else {
+          throw new Error(`Gagal membuat Jadwal Dinasan: ${dataDinasan.error || 'Terjadi kesalahan'}`);
+        }
+      }
+
+      setFeedback({
+        type: 'success',
+        text: successMessages.join('\n')
+      });
+
+      if (newFiles.length > 0) {
+        setHistoryFiles(prev => [...newFiles, ...prev.filter(f => !newFiles.includes(f))]);
       }
     } catch (err) {
-      setFeedback({ type: 'error', text: 'Galat: ' + err.message });
+      setFeedback({
+        type: 'error',
+        text: 'Galat pembuatan dokumen: ' + err.message
+      });
     } finally {
-      setTabloGenerating(false);
+      setIsGenerating(false);
     }
   };
 
-  // 2. Ekspor Jadwal Dinasan
-  const handleExportDinasan = async () => {
-    const effectiveFolder = selectedSourceDir || targetDir || exportDir;
-    if (!effectiveFolder) {
-      alert('Silakan tentukan Folder atau Berkas Sumber terlebih dahulu!');
-      return;
-    }
-    setDinasanGenerating(true);
-    setFeedback(null);
-    try {
-      const res = await fetch('/api/timemark/export-dinasan', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          folder: effectiveFolder,
-          exportDir: exportDir || effectiveFolder,
-          year: dinasanYear,
-          month: dinasanMonth,
-          withPersonnel
-        })
-      });
-      const data = await res.json();
-      if (res.ok && data.ok) {
-        setFeedback({ type: 'success', text: `✓ Berkas Jadwal Dinasan berhasil dibuat: ${data.filePath}` });
-        if (data.filePath) {
-          setHistoryFiles(prev => [data.filePath, ...prev.filter(f => f !== data.filePath)]);
-        }
-      } else {
-        setFeedback({ type: 'error', text: 'Gagal membuat Jadwal Dinasan: ' + (data.error || 'Terjadi kesalahan') });
-      }
-    } catch (err) {
-      setFeedback({ type: 'error', text: 'Galat: ' + err.message });
-    } finally {
-      setDinasanGenerating(false);
-    }
-  };
-
-  // Open file in Windows Explorer
+  // Buka file di Windows Explorer
   const handleOpenFile = async (filePath) => {
     try {
       await fetch('/api/timemark/open-file', {
@@ -146,6 +145,14 @@ export default function ExcelExportPanel({ targetDir, exportDir }) {
     }
   };
 
+  // Label dinamis untuk tombol eksekusi
+  const getButtonLabel = () => {
+    if (isGenerating) return 'Memproses Dokumen Excel...';
+    if (exportDocType === 'both') return '⚡ Buat Tablo & Jadwal Dinasan Excel';
+    if (exportDocType === 'tablo') return '⚡ Buat Tablo Checklist Excel';
+    return '⚡ Buat Jadwal Dinasan Excel';
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', height: '100%', overflowY: 'auto', paddingRight: '0.5rem' }}>
       
@@ -155,7 +162,7 @@ export default function ExcelExportPanel({ targetDir, exportDir }) {
           <span>📊</span> Ekspor Dokumen Resmi Excel
         </h3>
         <p style={{ fontSize: '0.825rem', color: 'var(--text-secondary)', margin: '0.25rem 0 0 0' }}>
-          Mencetak formulir KAI resmi Tablo Checklist (Form STE-RECORD-13.4.01) dan Jadwal Dinasan yang otomatis sinkron dengan profil pegawai aktif.
+          Mencetak formulir KAI resmi Tablo Checklist (Form STE-RECORD-13.4.01) dan Jadwal Dinasan Pegawai yang otomatis sinkron dengan profil personil aktif.
         </p>
       </div>
 
@@ -166,7 +173,7 @@ export default function ExcelExportPanel({ targetDir, exportDir }) {
             <span>📁</span> Sumber Berkas / Folder (PDF atau Jadwal):
           </label>
           <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-            Dapat memilih folder PDF target/sumber, atau file PDF / schedule.json spesifik
+            Folder PDF target/sumber, atau file PDF / schedule.json spesifik
           </span>
         </div>
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
@@ -229,138 +236,237 @@ export default function ExcelExportPanel({ targetDir, exportDir }) {
 
       {feedback && (
         <div style={{
-          padding: '0.75rem 1rem',
+          padding: '0.85rem 1.15rem',
           borderRadius: '6px',
           fontSize: '0.85rem',
           background: feedback.type === 'success' ? '#14532d' : '#7f1d1d',
           color: feedback.type === 'success' ? '#86efac' : '#fca5a5',
-          border: `1px solid ${feedback.type === 'success' ? '#22c55e' : '#ef4444'}`
+          border: `1px solid ${feedback.type === 'success' ? '#22c55e' : '#ef4444'}`,
+          whiteSpace: 'pre-line',
+          lineHeight: 1.5
         }}>
           {feedback.text}
         </div>
       )}
 
-      {/* Grid: 2 Export Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem' }}>
+      {/* Unified Single Export Panel */}
+      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
         
-        {/* Card 1: Tablo Checklist */}
-        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '1.25rem', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-              <span style={{ fontSize: '1.25rem' }}>📑</span>
-              <h4 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
-                Tablo Checklist & Perawatan Berkala
-              </h4>
-            </div>
-            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '1rem', lineHeight: 1.4 }}>
-              Formulir resmi No. STE-RECORD-13.4.01 A4 Landscape tepat 1 halaman, lengkap dengan tanda tangan KUPT Resor dan KAUR Preventif.
-            </p>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1rem' }}>
-              <div>
-                <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.25rem' }}>Bulan</label>
-                <select
-                  value={tabloMonth}
-                  onChange={e => setTabloMonth(Number(e.target.value))}
-                  style={{ width: '100%', padding: '0.5rem', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '6px', color: 'var(--text-primary)', fontSize: '0.85rem' }}
-                >
-                  {months.map(m => (
-                    <option key={m.num} value={m.num}>{m.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.25rem' }}>Tahun</label>
+        {/* Pilihan Jenis Dokumen */}
+        <div>
+          <label style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)', display: 'block', marginBottom: '0.65rem' }}>
+            🎯 Dokumen yang Ingin Dibuat:
+          </label>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.75rem' }}>
+            
+            {/* Opsi 1: Keduanya */}
+            <div
+              onClick={() => setExportDocType('both')}
+              style={{
+                border: exportDocType === 'both' ? '2px solid var(--accent)' : '1px solid var(--border-color)',
+                background: exportDocType === 'both' ? 'var(--bg-card-hover)' : 'var(--bg-secondary)',
+                borderRadius: '8px',
+                padding: '0.85rem 1rem',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
                 <input
-                  type="number"
-                  value={tabloYear}
-                  onChange={e => setTabloYear(Number(e.target.value))}
-                  style={{ width: '100%', padding: '0.5rem', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '6px', color: 'var(--text-primary)', fontSize: '0.85rem' }}
+                  type="radio"
+                  name="docType"
+                  checked={exportDocType === 'both'}
+                  onChange={() => setExportDocType('both')}
+                  style={{ accentColor: 'var(--accent)', cursor: 'pointer' }}
                 />
+                <span style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-primary)' }}>
+                  ✨ Keduanya (Tablo + Jadwal)
+                </span>
               </div>
+              <p style={{ fontSize: '0.775rem', color: 'var(--text-secondary)', margin: '0.25rem 0 0 1.5rem', lineHeight: 1.35 }}>
+                Ekspor formulir Tablo Checklist sekaligus Jadwal Dinasan secara bersamaan.
+              </p>
             </div>
-          </div>
 
-          <button
-            onClick={handleExportTablo}
-            disabled={tabloGenerating}
-            style={{ width: '100%', padding: '0.65rem', background: 'var(--accent)', color: '#ffffff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem' }}
-          >
-            {tabloGenerating ? 'Membuat Tablo Excel...' : '⚡ Buat Tablo Excel'}
-          </button>
+            {/* Opsi 2: Tablo Saja */}
+            <div
+              onClick={() => setExportDocType('tablo')}
+              style={{
+                border: exportDocType === 'tablo' ? '2px solid var(--accent)' : '1px solid var(--border-color)',
+                background: exportDocType === 'tablo' ? 'var(--bg-card-hover)' : 'var(--bg-secondary)',
+                borderRadius: '8px',
+                padding: '0.85rem 1rem',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                <input
+                  type="radio"
+                  name="docType"
+                  checked={exportDocType === 'tablo'}
+                  onChange={() => setExportDocType('tablo')}
+                  style={{ accentColor: 'var(--accent)', cursor: 'pointer' }}
+                />
+                <span style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-primary)' }}>
+                  📑 Tablo Checklist Saja
+                </span>
+              </div>
+              <p style={{ fontSize: '0.775rem', color: 'var(--text-secondary)', margin: '0.25rem 0 0 1.5rem', lineHeight: 1.35 }}>
+                Form No. STE-RECORD-13.4.01 A4 Landscape tepat 1 halaman resmi.
+              </p>
+            </div>
+
+            {/* Opsi 3: Jadwal Dinasan Saja */}
+            <div
+              onClick={() => setExportDocType('dinasan')}
+              style={{
+                border: exportDocType === 'dinasan' ? '2px solid var(--accent)' : '1px solid var(--border-color)',
+                background: exportDocType === 'dinasan' ? 'var(--bg-card-hover)' : 'var(--bg-secondary)',
+                borderRadius: '8px',
+                padding: '0.85rem 1rem',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease'
+              }}
+            >
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
+                <input
+                  type="radio"
+                  name="docType"
+                  checked={exportDocType === 'dinasan'}
+                  onChange={() => setExportDocType('dinasan')}
+                  style={{ accentColor: 'var(--accent)', cursor: 'pointer' }}
+                />
+                <span style={{ fontWeight: 600, fontSize: '0.9rem', color: 'var(--text-primary)' }}>
+                  📅 Jadwal Dinasan Saja
+                </span>
+              </div>
+              <p style={{ fontSize: '0.775rem', color: 'var(--text-secondary)', margin: '0.25rem 0 0 1.5rem', lineHeight: 1.35 }}>
+                Matriks dinasan harian personil dan rekapitulasi dinas (S, M, L, P, CT).
+              </p>
+            </div>
+
+          </div>
         </div>
 
-        {/* Card 2: Jadwal Dinasan Pegawai */}
-        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '1.25rem', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-          <div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.5rem' }}>
-              <span style={{ fontSize: '1.25rem' }}>📅</span>
-              <h4 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
-                Jadwal Dinasan Pegawai
-              </h4>
-            </div>
-            <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '1rem', lineHeight: 1.4 }}>
-              Matriks dinasan harian pegawai UPT Resor Sintel 1.21 Bogor format Portrait 1 halaman lebar dengan rekap dinas (S, M, L, P, CT).
-            </p>
-
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '0.85rem' }}>
-              <div>
-                <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.25rem' }}>Bulan</label>
-                <select
-                  value={dinasanMonth}
-                  onChange={e => setDinasanMonth(Number(e.target.value))}
-                  style={{ width: '100%', padding: '0.5rem', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '6px', color: 'var(--text-primary)', fontSize: '0.85rem' }}
-                >
-                  {months.map(m => (
-                    <option key={m.num} value={m.num}>{m.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.25rem' }}>Tahun</label>
-                <input
-                  type="number"
-                  value={dinasanYear}
-                  onChange={e => setDinasanYear(Number(e.target.value))}
-                  style={{ width: '100%', padding: '0.5rem', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '6px', color: 'var(--text-primary)', fontSize: '0.85rem' }}
-                />
-              </div>
-            </div>
-
-            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem', color: 'var(--text-secondary)', cursor: 'pointer', marginBottom: '1rem' }}>
-              <input
-                type="checkbox"
-                checked={withPersonnel}
-                onChange={e => setWithPersonnel(e.target.checked)}
-              />
-              <span>Sertakan Kolom Personil Tim Dinasan Lengkap</span>
+        {/* Unified Periode Selector (Satu Pilihan Bulan & Tahun) */}
+        <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '1rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+            <label style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+              🗓️ Periode Dokumen (Bulan & Tahun):
             </label>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+              Menentukan kop laporan Tablo & rentang kalender dinasan
+            </span>
           </div>
-
-          <button
-            onClick={handleExportDinasan}
-            disabled={dinasanGenerating}
-            style={{ width: '100%', padding: '0.65rem', background: 'var(--accent)', color: '#ffffff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem' }}
-          >
-            {dinasanGenerating ? 'Membuat Jadwal Dinasan...' : '⚡ Buat Jadwal Dinasan Excel'}
-          </button>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <div>
+              <label style={{ fontSize: '0.775rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>
+                Pilih Bulan
+              </label>
+              <select
+                value={exportMonth}
+                onChange={e => setExportMonth(Number(e.target.value))}
+                style={{
+                  width: '100%',
+                  padding: '0.55rem 0.75rem',
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '6px',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.85rem'
+                }}
+              >
+                {months.map(m => (
+                  <option key={m.num} value={m.num}>{m.name}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label style={{ fontSize: '0.775rem', color: 'var(--text-secondary)', display: 'block', marginBottom: '0.3rem' }}>
+                Pilih Tahun
+              </label>
+              <input
+                type="number"
+                value={exportYear}
+                onChange={e => setExportYear(Number(e.target.value))}
+                style={{
+                  width: '100%',
+                  padding: '0.55rem 0.75rem',
+                  background: 'var(--bg-card)',
+                  border: '1px solid var(--border-color)',
+                  borderRadius: '6px',
+                  color: 'var(--text-primary)',
+                  fontSize: '0.85rem'
+                }}
+              />
+            </div>
+          </div>
         </div>
+
+        {/* Pengaturan Tambahan (Personil Lengkap) */}
+        {(exportDocType === 'both' || exportDocType === 'dinasan') && (
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.825rem', color: 'var(--text-primary)', cursor: 'pointer', padding: '0.25rem 0' }}>
+            <input
+              type="checkbox"
+              checked={withPersonnel}
+              onChange={e => setWithPersonnel(e.target.checked)}
+              style={{ accentColor: 'var(--accent)' }}
+            />
+            <span>Sertakan Kolom Personil Tim Dinasan Lengkap pada Jadwal Dinasan</span>
+          </label>
+        )}
+
+        {/* Single Primary Action Button */}
+        <button
+          onClick={handleExport}
+          disabled={isGenerating}
+          style={{
+            width: '100%',
+            padding: '0.75rem',
+            background: isGenerating ? 'var(--bg-card-hover)' : 'var(--accent)',
+            color: '#ffffff',
+            border: 'none',
+            borderRadius: '6px',
+            cursor: isGenerating ? 'not-allowed' : 'pointer',
+            fontWeight: 600,
+            fontSize: '0.9rem',
+            transition: 'background 0.2s ease',
+            boxShadow: isGenerating ? 'none' : '0 2px 4px rgba(0,0,0,0.1)'
+          }}
+        >
+          {getButtonLabel()}
+        </button>
 
       </div>
 
       {/* Riwayat Berkas yang Baru Dibuat */}
       {historyFiles.length > 0 && (
         <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '1.25rem' }}>
-          <h4 style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-primary)', marginBottom: '0.75rem' }}>
+          <h4 style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-primary)', margin: '0 0 0.75rem 0' }}>
             📁 Berkas Excel yang Baru Dihasilkan:
           </h4>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
             {historyFiles.map((file, idx) => (
               <div key={idx} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '0.6rem 0.85rem' }}>
-                <span style={{ fontSize: '0.825rem', color: 'var(--text-primary)', fontFamily: 'monospace' }}>{file}</span>
+                <span style={{ fontSize: '0.825rem', color: 'var(--text-primary)', fontFamily: 'monospace', wordBreak: 'break-all' }}>
+                  {file}
+                </span>
                 <button
                   onClick={() => handleOpenFile(file)}
-                  style={{ padding: '0.35rem 0.75rem', background: 'var(--accent-dim)', color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: '5px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600 }}
+                  style={{
+                    padding: '0.35rem 0.75rem',
+                    background: 'var(--accent-dim)',
+                    color: 'var(--accent)',
+                    border: '1px solid var(--accent)',
+                    borderRadius: '5px',
+                    cursor: 'pointer',
+                    fontSize: '0.75rem',
+                    fontWeight: 600,
+                    whiteSpace: 'nowrap',
+                    marginLeft: '0.75rem'
+                  }}
                 >
                   Buka Berkas
                 </button>

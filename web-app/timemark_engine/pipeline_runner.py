@@ -86,7 +86,8 @@ def run_cmd(cmd_list, step_key, step_name):
             stderr=subprocess.STDOUT,
             text=True,
             bufsize=1,
-            env=env
+            env=env,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
         )
         with _state_lock:
             state["active_process"] = proc
@@ -180,7 +181,7 @@ def _execute_pipeline_task(source_dir, target_dir, export_dir, merged_dir, selec
                 state["current_step"] = 1
                 state["progress"] = int((step_idx - 1) / total_steps * 100)
             cmd = [
-                py_exe, os.path.join(ENGINE_DIR, "export_pdf_foto.py"),
+                py_exe, "--run-script", os.path.join(ENGINE_DIR, "export_pdf_foto.py"),
                 "--input", source_dir,
                 "--output", export_dir,
                 "--sap-mapping", sap_mapping
@@ -196,7 +197,7 @@ def _execute_pipeline_task(source_dir, target_dir, export_dir, merged_dir, selec
                 state["current_step"] = 2
                 state["progress"] = int((step_idx - 1) / total_steps * 100)
             cmd = [
-                py_exe, os.path.join(ENGINE_DIR, "extract_pdf_dates.py"),
+                py_exe, "--run-script", os.path.join(ENGINE_DIR, "extract_pdf_dates.py"),
                 "--pdf-dir", target_dir,
                 "--output-dir", export_dir
             ]
@@ -211,7 +212,7 @@ def _execute_pipeline_task(source_dir, target_dir, export_dir, merged_dir, selec
                 state["current_step"] = 3
                 state["progress"] = int((step_idx - 1) / total_steps * 100)
             cmd = [
-                py_exe, os.path.join(ENGINE_DIR, "scheduler.py"),
+                py_exe, "--run-script", os.path.join(ENGINE_DIR, "scheduler.py"),
                 "--pdf-dir", target_dir,
                 "--photos-dir", export_dir,
                 "--mapping", time_mapping,
@@ -229,7 +230,7 @@ def _execute_pipeline_task(source_dir, target_dir, export_dir, merged_dir, selec
                 state["current_step"] = 4
                 state["progress"] = int((step_idx - 1) / total_steps * 100)
             cmd = [
-                py_exe, os.path.join(ENGINE_DIR, "edit_timemark_ide1.py"),
+                py_exe, "--run-script", os.path.join(ENGINE_DIR, "edit_timemark_ide1.py"),
                 "--input", export_dir,
                 "--output", edited_photos_dir,
                 "--schedule", schedule_file,
@@ -261,7 +262,7 @@ def _execute_pipeline_task(source_dir, target_dir, export_dir, merged_dir, selec
                 add_log("success", f"✓ {len(pdf_files)} berkas PDF berhasil dicadangkan dengan aman.")
 
             cmd = [
-                py_exe, os.path.join(ENGINE_DIR, "merge_pdf_foto.py"),
+                py_exe, "--run-script", os.path.join(ENGINE_DIR, "merge_pdf_foto.py"),
                 "--input", target_dir,
                 "--photos", edited_photos_dir,
                 "--output", actual_step5_output

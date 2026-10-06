@@ -1684,12 +1684,16 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
 
             cmd = [
                 sys.executable,
+                "--run-script",
                 os.path.join(ENGINE_DIR, "edit_timemark_ide1.py"),
                 "--input", target_folder,
                 "--date", new_date,
                 "--detector", "guide"
             ]
-            subprocess.run(cmd, capture_output=True, text=True, cwd=BASE_DIR)
+            subprocess.run(
+                cmd, capture_output=True, text=True, cwd=BASE_DIR,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+            )
             self._json({"ok": True, "message": "Waktu timemark berhasil diperbarui."})
         except Exception as e:
             _log(f"Edit time error: {e}")
@@ -1712,12 +1716,16 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
 
             cmd = [
                 sys.executable,
+                "--run-script",
                 os.path.join(ENGINE_DIR, "edit_timemark_ide1.py"),
                 "--input", target_photo,
                 "--y-override", str(y_override),
                 "--detector", "guide"
             ]
-            subprocess.run(cmd, capture_output=True, text=True, cwd=BASE_DIR)
+            subprocess.run(
+                cmd, capture_output=True, text=True, cwd=BASE_DIR,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+            )
             self._json({"ok": True, "message": f"Koordinat y={y_override} berhasil diterapkan."})
         except Exception as e:
             _log(f"Edit coord error: {e}")
@@ -1752,11 +1760,15 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
 
             cmd = [
                 sys.executable,
+                "--run-script",
                 os.path.join(ENGINE_DIR, "edit_timemark_ide1.py"),
                 "--input", target_photo,
                 "--detector", "guide"
             ]
-            subprocess.run(cmd, capture_output=True, text=True, cwd=BASE_DIR)
+            subprocess.run(
+                cmd, capture_output=True, text=True, cwd=BASE_DIR,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+            )
             self._json({"ok": True, "message": "Foto berhasil diganti dan di-watermark ulang."})
         except Exception as e:
             _log(f"Replace photo error: {e}")
@@ -1776,6 +1788,7 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
 
             cmd = [
                 sys.executable,
+                "--run-script",
                 os.path.join(ENGINE_DIR, "correct_serat_optik_cores.py"),
                 "--folders", folder,
                 "--json"
@@ -1783,7 +1796,10 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
             if apply_corr:
                 cmd.append("--apply")
 
-            res = subprocess.run(cmd, capture_output=True, text=True, cwd=BASE_DIR)
+            res = subprocess.run(
+                cmd, capture_output=True, text=True, cwd=BASE_DIR,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+            )
             items = []
             if res.stdout:
                 try:
@@ -1812,11 +1828,15 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
 
             cmd = [
                 sys.executable,
+                "--run-script",
                 os.path.join(ENGINE_DIR, "audit_and_correct_personnel.py"),
                 "--folder", folder,
                 "--action", action
             ]
-            res = subprocess.run(cmd, capture_output=True, text=True, cwd=BASE_DIR)
+            res = subprocess.run(
+                cmd, capture_output=True, text=True, cwd=BASE_DIR,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+            )
             report = {}
             if res.stdout:
                 try:
@@ -1846,6 +1866,7 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
 
             cmd = [
                 sys.executable,
+                "--run-script",
                 os.path.join(ENGINE_DIR, "export_tablo_excel.py"),
                 "--output-dir", out_dir
             ]
@@ -1868,7 +1889,13 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
             elif export_dir and os.path.isfile(os.path.join(export_dir, "schedule.json")):
                 cmd.extend(["--mode", "pipeline", "--schedule", os.path.join(export_dir, "schedule.json")])
 
-            res = subprocess.run(cmd, capture_output=True, text=True, cwd=BASE_DIR)
+            res = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                cwd=BASE_DIR,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+            )
             file_path = None
             if res.stdout:
                 for line in res.stdout.splitlines():
@@ -1913,10 +1940,11 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
                     folder_dir = os.path.dirname(folder)
                     temp_sch = os.path.join(out_dir, "temp_dinasan_schedule.json")
                     subprocess.run([
-                        sys.executable, os.path.join(ENGINE_DIR, "scheduler.py"),
+                        sys.executable, "--run-script", os.path.join(ENGINE_DIR, "scheduler.py"),
                         "--pdf-dir", folder_dir,
                         "--output", temp_sch
-                    ], capture_output=True, text=True, cwd=BASE_DIR)
+                    ], capture_output=True, text=True, cwd=BASE_DIR,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000))
                     if os.path.isfile(temp_sch):
                         sch_path = temp_sch
                 elif os.path.isdir(folder):
@@ -1925,10 +1953,11 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
                     else:
                         temp_sch = os.path.join(out_dir, "temp_dinasan_schedule.json")
                         subprocess.run([
-                            sys.executable, os.path.join(ENGINE_DIR, "scheduler.py"),
+                            sys.executable, "--run-script", os.path.join(ENGINE_DIR, "scheduler.py"),
                             "--pdf-dir", folder,
                             "--output", temp_sch
-                        ], capture_output=True, text=True, cwd=BASE_DIR)
+                        ], capture_output=True, text=True, cwd=BASE_DIR,
+                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000))
                         if os.path.isfile(temp_sch):
                             sch_path = temp_sch
             elif export_dir and os.path.isfile(os.path.join(export_dir, "schedule.json")):
@@ -1939,6 +1968,7 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
 
             cmd = [
                 sys.executable,
+                "--run-script",
                 os.path.join(ENGINE_DIR, "export_dinasan_excel.py"),
                 "--month", month_str,
                 "--schedule", sch_path,
@@ -1947,7 +1977,13 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
             if with_personnel:
                 cmd.append("--with-personnel")
 
-            res = subprocess.run(cmd, capture_output=True, text=True, cwd=BASE_DIR)
+            res = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                cwd=BASE_DIR,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+            )
             file_path = None
             if res.stdout:
                 for line in res.stdout.splitlines():
@@ -2247,6 +2283,35 @@ def _get_safe_webview_storage():
 
 
 def main():
+    # ── CLI Script Dispatcher (Subprocess runner untuk PyInstaller frozen binary) ──
+    if len(sys.argv) > 1:
+        first_arg = sys.argv[1]
+        target_script = None
+        if first_arg.endswith(".py"):
+            target_script = first_arg
+            sys.argv = sys.argv[1:]
+        elif first_arg in ("--run-script", "-s") and len(sys.argv) > 2:
+            target_script = sys.argv[2]
+            sys.argv = [sys.argv[0]] + sys.argv[3:]
+
+        if target_script:
+            if not os.path.isabs(target_script):
+                candidate = os.path.join(ENGINE_DIR, target_script)
+                if os.path.isfile(candidate):
+                    target_script = candidate
+            if os.path.isfile(target_script):
+                import runpy
+                if ENGINE_DIR not in sys.path:
+                    sys.path.insert(0, ENGINE_DIR)
+                try:
+                    runpy.run_path(target_script, run_name="__main__")
+                except SystemExit as se:
+                    sys.exit(se.code)
+                except Exception as e:
+                    print(f"Error running script {target_script}: {e}", file=sys.stderr)
+                    sys.exit(1)
+                sys.exit(0)
+
     _log("=== Sintelis Utility START ===")
     _log(f"Python: {sys.version}")
     _log(f"Tesseract: {TESSERACT_CMD} exists={os.path.exists(TESSERACT_CMD)}")
@@ -2271,7 +2336,7 @@ def main():
     print("[OK] Opening desktop window...")
 
     webview.create_window(
-        "Sintelis Utility 2.0 (v1.5.1)",
+        "Sintelis Utility 2.0 (v1.5.2)",
         f"http://localhost:{PORT}",
         width=1400,
         height=900,
