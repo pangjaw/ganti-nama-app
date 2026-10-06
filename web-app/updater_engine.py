@@ -12,7 +12,7 @@ import threading
 import subprocess
 import tempfile
 
-APP_VERSION = "1.4.0"
+APP_VERSION = "1.5.0"
 DEFAULT_UPDATE_URL = "https://update.sintelboo.my.id/version.json"
 
 _update_state = {
@@ -48,7 +48,7 @@ def check_update(custom_url=None):
     try:
         req = urllib.request.Request(
             url,
-            headers={"User-Agent": "SintelisUtility-Client/1.4.0"}
+            headers={"User-Agent": "SintelisUtility-Client/1.5.0"}
         )
         with urllib.request.urlopen(req, timeout=3.5) as resp:
             data = json.loads(resp.read().decode("utf-8"))
@@ -99,7 +99,7 @@ def _download_task(download_url):
     try:
         req = urllib.request.Request(
             download_url,
-            headers={"User-Agent": "SintelisUtility-Client/1.4.0"}
+            headers={"User-Agent": "SintelisUtility-Client/1.5.0"}
         )
         with urllib.request.urlopen(req, timeout=15) as resp, open(temp_exe, "wb") as out_f:
             total_len = int(resp.headers.get("Content-Length", 0)) or _update_state["file_size"] or 1
@@ -144,21 +144,39 @@ def apply_update_and_restart():
             return {"ok": False, "error": "File pembaruan belum siap diunduh"}
 
     if getattr(sys, "frozen", False):
-        target_exe = sys.executable
+        target_exe = os.path.abspath(sys.executable)
     else:
-        target_exe = os.path.join(os.path.dirname(os.path.abspath(__file__)), "dist", "SintelisUtility.exe")
+        target_exe = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "dist", "SintelisUtility.exe"))
 
+    current_pid = os.getpid()
+
+    # Script restart batch yang handal di Windows:
+    # 1. Pastikan proses lama berhenti (taskkill target PID)
+    # 2. Copy timpa file exe
+    # 3. Jalankan aplikasi baru via explorer.exe (memunculkan window GUI interaktif di desktop pengguna)
+    # 4. Bersihkan file sementara
     bat_content = f"""@echo off
-timeout /t 2 /nobreak > nul
-:retry
-copy /y "{temp_exe}" "{target_exe}" > nul 2>&1
+set "TARGET={target_exe}"
+set "TEMP_EXE={temp_exe}"
+
+:: Tunggu sejenak lalu pastikan proses lama benar-benar mati
+timeout /t 1 /nobreak > nul
+taskkill /F /PID {current_pid} > nul 2>&1
+timeout /t 1 /nobreak > nul
+
+:retry_copy
+copy /y "%TEMP_EXE%" "%TARGET%" > nul 2>&1
 if errorlevel 1 (
     timeout /t 1 /nobreak > nul
-    goto retry
+    goto retry_copy
 )
-start "" "{target_exe}"
-del "{temp_exe}" > nul 2>&1
-del "%~f0" > nul 2>&1
+
+:: Jalankan aplikasi baru menggunakan explorer.exe (memastikan window GUI muncul di desktop pengguna)
+start "" explorer.exe "%TARGET%"
+
+:: Bersihkan file sementara
+del "%TEMP_EXE%" > nul 2>&1
+(goto) 2>nul & del "%~f0"
 exit
 """
     bat_file = os.path.join(tempfile.gettempdir(), "sintelis_updater.bat")
@@ -173,5 +191,5 @@ exit
         close_fds=True
     )
 
-    threading.Thread(target=lambda: (time.sleep(0.5), os._exit(0)), daemon=True).start()
+    threading.Thread(target=lambda: (time.sleep(1.0), os._exit(0)), daemon=True).start()
     return {"ok": True, "message": "Restarting application to apply update..."}
