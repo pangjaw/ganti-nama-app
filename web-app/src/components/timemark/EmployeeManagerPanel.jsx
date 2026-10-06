@@ -92,13 +92,91 @@ export default function EmployeeManagerPanel() {
     });
   };
 
+  // Save current changes to the active/opened preset
+  const handleSaveCurrentPreset = async () => {
+    if (!activePresetId) {
+      alert('Pilih preset terlebih dahulu.');
+      return;
+    }
+    const presetIndex = presets.findIndex(p => p.id === activePresetId);
+    if (presetIndex === -1) {
+      alert('Preset tidak ditemukan dalam daftar.');
+      return;
+    }
+
+    setSaving(true);
+    setFeedback(null);
+    try {
+      const updatedPresets = [...presets];
+      const targetPreset = updatedPresets[presetIndex];
+      updatedPresets[presetIndex] = {
+        ...targetPreset,
+        updated_at: new Date().toISOString(),
+        data: {
+          resor,
+          kaur: kaurList,
+          pnc: pncList
+        }
+      };
+
+      const payload = {
+        active_preset_id: activePresetId,
+        presets: updatedPresets,
+        daftar_pegawai: {
+          resor,
+          kaur: kaurList,
+          pnc: pncList
+        }
+      };
+
+      const res = await fetch('/api/timemark/pegawai', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+
+      const result = await res.json();
+      if (res.ok && result.ok) {
+        setPresets(updatedPresets);
+        setFeedback({
+          type: 'success',
+          text: `✓ Perubahan berhasil disimpan ke preset "${targetPreset.name}" dan aktif sebagai profil utama!`
+        });
+      } else {
+        setFeedback({
+          type: 'error',
+          text: 'Gagal menyimpan preset: ' + (result.error || 'Terjadi kesalahan')
+        });
+      }
+    } catch (err) {
+      setFeedback({ type: 'error', text: 'Galat penyimpanan: ' + err.message });
+    } finally {
+      setSaving(false);
+    }
+  };
+
   // Save current profile to backend
   const handleSaveActive = async () => {
     setSaving(true);
     setFeedback(null);
     try {
+      let updatedPresets = presets;
+      if (activePresetId) {
+        const pIdx = presets.findIndex(p => p.id === activePresetId);
+        if (pIdx !== -1) {
+          updatedPresets = [...presets];
+          updatedPresets[pIdx] = {
+            ...updatedPresets[pIdx],
+            updated_at: new Date().toISOString(),
+            data: { resor, kaur: kaurList, pnc: pncList }
+          };
+          setPresets(updatedPresets);
+        }
+      }
+
       const payload = {
         active_preset_id: activePresetId,
+        presets: updatedPresets,
         daftar_pegawai: {
           resor,
           kaur: kaurList,
@@ -185,19 +263,29 @@ export default function EmployeeManagerPanel() {
         </div>
 
         {/* Preset Selector */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
           <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Pilih Preset:</label>
           <select
             value={activePresetId}
             onChange={(e) => handleSelectPreset(e.target.value)}
-            style={{ padding: '0.45rem 0.75rem', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '6px', color: 'var(--text-primary)', fontSize: '0.85rem' }}
+            style={{ padding: '0.45rem 0.75rem', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '6px', color: 'var(--text-primary)', fontSize: '0.85rem', minWidth: '150px' }}
           >
             {presets.map(p => (
               <option key={p.id} value={p.id}>{p.name}</option>
             ))}
           </select>
           <button
+            onClick={handleSaveCurrentPreset}
+            disabled={saving || !activePresetId}
+            title="Simpan perubahan langsung ke preset yang sedang dibuka ini"
+            style={{ padding: '0.45rem 0.85rem', background: 'var(--accent)', color: '#ffffff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.825rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+          >
+            <span>💾</span> Simpan ke Preset Ini
+          </button>
+          <button
             onClick={handleSaveNewPreset}
+            disabled={saving}
+            title="Simpan data saat ini sebagai preset baru dengan nama berbeda"
             style={{ padding: '0.45rem 0.85rem', background: 'var(--bg-card-hover)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.825rem', fontWeight: 500 }}
           >
             + Simpan Preset Baru
@@ -397,7 +485,7 @@ export default function EmployeeManagerPanel() {
       </div>
 
       {/* Tombol Simpan Utama */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: 'auto', paddingTop: '0.5rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '0.75rem', marginTop: 'auto', paddingTop: '0.5rem', flexWrap: 'wrap' }}>
         <button
           onClick={fetchEmployeeData}
           disabled={saving}
@@ -406,11 +494,18 @@ export default function EmployeeManagerPanel() {
           Muat Ulang
         </button>
         <button
+          onClick={handleSaveCurrentPreset}
+          disabled={saving || !activePresetId}
+          style={{ padding: '0.65rem 1.5rem', background: 'var(--bg-card-hover)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.4rem' }}
+        >
+          <span>💾</span> {saving ? 'Menyimpan...' : `Simpan ke Preset "${presets.find(p => p.id === activePresetId)?.name || 'Aktif'}"`}
+        </button>
+        <button
           onClick={handleSaveActive}
           disabled={saving}
           style={{ padding: '0.65rem 1.75rem', background: 'var(--accent)', color: '#ffffff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem' }}
         >
-          {saving ? 'Menyimpan...' : '💾 Simpan ke Profil Aktif'}
+          {saving ? 'Menyimpan...' : '💾 Simpan & Terapkan Profil Aktif'}
         </button>
       </div>
 

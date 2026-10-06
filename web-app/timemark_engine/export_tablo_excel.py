@@ -941,9 +941,12 @@ def main():
             return 1
         custom_pdf_dir = Path(args.folder).resolve()
         temp_sched_file = APP_DIR / "logs" / "temp_custom_schedule.json"
+        temp_sched_file.parent.mkdir(parents=True, exist_ok=True)
 
         print(f"⚡ [TABLO MODE 2] Menjalankan scheduler.py pada folder: {custom_pdf_dir}...")
-        py_scheduler = APP_DIR / "scripts" / "scheduler.py"
+        py_scheduler = Path(__file__).resolve().parent / "scheduler.py"
+        if not py_scheduler.exists():
+            py_scheduler = APP_DIR / "scripts" / "scheduler.py"
         sched_res = subprocess.run([
             sys.executable, str(py_scheduler),
             "--pdf-dir", str(custom_pdf_dir),

@@ -12,7 +12,7 @@ import threading
 import subprocess
 import tempfile
 
-APP_VERSION = "1.5.0"
+APP_VERSION = "1.5.1"
 DEFAULT_UPDATE_URL = "https://update.sintelboo.my.id/version.json"
 
 _update_state = {
@@ -48,7 +48,7 @@ def check_update(custom_url=None):
     try:
         req = urllib.request.Request(
             url,
-            headers={"User-Agent": "SintelisUtility-Client/1.5.0"}
+            headers={"User-Agent": "SintelisUtility-Client/1.5.1"}
         )
         with urllib.request.urlopen(req, timeout=3.5) as resp:
             data = json.loads(resp.read().decode("utf-8"))

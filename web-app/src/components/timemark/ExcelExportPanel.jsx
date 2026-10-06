@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 export default function ExcelExportPanel({ targetDir, exportDir }) {
   const currentYear = new Date().getFullYear();
   const currentMonth = new Date().getMonth() + 1;
 
+  const [selectedSourceDir, setSelectedSourceDir] = useState(targetDir || exportDir || '');
   const [tabloYear, setTabloYear] = useState(currentYear);
   const [tabloMonth, setTabloMonth] = useState(currentMonth);
   const [tabloGenerating, setTabloGenerating] = useState(false);
@@ -16,6 +17,12 @@ export default function ExcelExportPanel({ targetDir, exportDir }) {
   const [historyFiles, setHistoryFiles] = useState([]);
   const [feedback, setFeedback] = useState(null);
 
+  useEffect(() => {
+    if (!selectedSourceDir && (targetDir || exportDir)) {
+      setSelectedSourceDir(targetDir || exportDir || '');
+    }
+  }, [targetDir, exportDir]);
+
   const months = [
     { num: 1, name: 'Januari' }, { num: 2, name: 'Februari' }, { num: 3, name: 'Maret' },
     { num: 4, name: 'April' }, { num: 5, name: 'Mei' }, { num: 6, name: 'Juni' },
@@ -23,10 +30,41 @@ export default function ExcelExportPanel({ targetDir, exportDir }) {
     { num: 10, name: 'Oktober' }, { num: 11, name: 'November' }, { num: 12, name: 'Desember' }
   ];
 
+  // Pick folder native
+  const handlePickFolder = async () => {
+    try {
+      const res = await fetch('/api/select-folder', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.path) {
+          setSelectedSourceDir(data.path);
+        }
+      }
+    } catch (err) {
+      alert('Gagal membuka dialog pemilihan folder: ' + err.message);
+    }
+  };
+
+  // Pick file native
+  const handlePickFile = async () => {
+    try {
+      const res = await fetch('/api/select-file', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.path) {
+          setSelectedSourceDir(data.path);
+        }
+      }
+    } catch (err) {
+      alert('Gagal membuka dialog pemilihan berkas: ' + err.message);
+    }
+  };
+
   // 1. Ekspor Tablo Checklist
   const handleExportTablo = async () => {
-    if (!targetDir && !exportDir) {
-      alert('Silakan tentukan Folder Target PDF atau Folder Ekspor terlebih dahulu!');
+    const effectiveFolder = selectedSourceDir || targetDir || exportDir;
+    if (!effectiveFolder) {
+      alert('Silakan tentukan Folder atau Berkas Sumber terlebih dahulu!');
       return;
     }
     setTabloGenerating(true);
@@ -36,8 +74,8 @@ export default function ExcelExportPanel({ targetDir, exportDir }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          folder: targetDir,
-          exportDir,
+          folder: effectiveFolder,
+          exportDir: exportDir || effectiveFolder,
           year: tabloYear,
           month: tabloMonth
         })
@@ -60,6 +98,11 @@ export default function ExcelExportPanel({ targetDir, exportDir }) {
 
   // 2. Ekspor Jadwal Dinasan
   const handleExportDinasan = async () => {
+    const effectiveFolder = selectedSourceDir || targetDir || exportDir;
+    if (!effectiveFolder) {
+      alert('Silakan tentukan Folder atau Berkas Sumber terlebih dahulu!');
+      return;
+    }
     setDinasanGenerating(true);
     setFeedback(null);
     try {
@@ -67,8 +110,8 @@ export default function ExcelExportPanel({ targetDir, exportDir }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          folder: targetDir,
-          exportDir,
+          folder: effectiveFolder,
+          exportDir: exportDir || effectiveFolder,
           year: dinasanYear,
           month: dinasanMonth,
           withPersonnel
@@ -114,6 +157,74 @@ export default function ExcelExportPanel({ targetDir, exportDir }) {
         <p style={{ fontSize: '0.825rem', color: 'var(--text-secondary)', margin: '0.25rem 0 0 0' }}>
           Mencetak formulir KAI resmi Tablo Checklist (Form STE-RECORD-13.4.01) dan Jadwal Dinasan yang otomatis sinkron dengan profil pegawai aktif.
         </p>
+      </div>
+
+      {/* Pemilihan Folder / Berkas Sumber Dokumen */}
+      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '1rem 1.25rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem' }}>
+          <label style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <span>📁</span> Sumber Berkas / Folder (PDF atau Jadwal):
+          </label>
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+            Dapat memilih folder PDF target/sumber, atau file PDF / schedule.json spesifik
+          </span>
+        </div>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+          <input
+            type="text"
+            value={selectedSourceDir}
+            onChange={e => setSelectedSourceDir(e.target.value)}
+            placeholder="Pilih folder sumber PDF atau berkas jadwal..."
+            style={{
+              flex: '1 1 300px',
+              padding: '0.55rem 0.85rem',
+              background: 'var(--bg-secondary)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '6px',
+              color: 'var(--text-primary)',
+              fontSize: '0.85rem',
+              fontFamily: 'monospace'
+            }}
+          />
+          <button
+            onClick={handlePickFolder}
+            title="Pilih folder sumber PDF target atau folder jadwal"
+            style={{
+              padding: '0.55rem 1rem',
+              background: 'var(--bg-card-hover)',
+              color: 'var(--text-primary)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontWeight: 500,
+              fontSize: '0.825rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.35rem'
+            }}
+          >
+            <span>📂</span> Pilih Folder...
+          </button>
+          <button
+            onClick={handlePickFile}
+            title="Pilih file PDF atau file schedule.json spesifik"
+            style={{
+              padding: '0.55rem 1rem',
+              background: 'var(--bg-card-hover)',
+              color: 'var(--text-primary)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontWeight: 500,
+              fontSize: '0.825rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.35rem'
+            }}
+          >
+            <span>📄</span> Pilih Berkas...
+          </button>
+        </div>
       </div>
 
       {feedback && (

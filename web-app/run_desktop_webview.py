@@ -1253,6 +1253,42 @@ def _pick_folder_native():
     return None
 
 
+def _pick_file_native():
+    """Buka dialog pemilihan file di Windows:
+    1. Tkinter askopenfilename (Topmost)
+    2. pywebview create_file_dialog OPEN
+    """
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        fpath = filedialog.askopenfilename(
+            title="Pilih Berkas PDF atau schedule.json",
+            filetypes=[("PDF atau JSON", "*.pdf;*.json"), ("Semua Berkas", "*.*")]
+        )
+        root.destroy()
+        if fpath and os.path.isfile(fpath):
+            return os.path.normpath(fpath)
+    except Exception as e:
+        _log(f"Tkinter file picker notice: {e}")
+
+    try:
+        if getattr(webview, 'windows', None) and len(webview.windows) > 0:
+            dialog_type = getattr(webview.FileDialog, 'OPEN', getattr(webview, 'OPEN_DIALOG', 10))
+            result = webview.windows[0].create_file_dialog(
+                dialog_type,
+                file_types=("PDF & JSON (*.pdf;*.json)", "Semua Berkas (*.*)")
+            )
+            if result and len(result) > 0 and result[0]:
+                return os.path.normpath(result[0])
+    except Exception as e:
+        _log(f"WebView file dialog notice: {e}")
+
+    return None
+
+
 def _save_file_dialog_native(default_name):
     """Opens a native Windows Save As file dialog."""
     # 1. Coba via pywebview jika window aktif (Native Windows FileDialog)
@@ -1424,6 +1460,8 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
         parsed = urllib.parse.urlparse(self.path)
         if parsed.path == "/api/select-folder":
             self._handle_select_folder()
+        elif parsed.path == "/api/select-file":
+            self._handle_select_file()
         elif parsed.path == "/api/accounts":
             self._handle_save_accounts()
         elif parsed.path == "/api/save-file":
@@ -1816,8 +1854,17 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
             if month:
                 cmd.extend(["--month", str(month)])
 
-            if folder and os.path.isdir(folder):
-                cmd.extend(["--mode", "custom", "--folder", folder])
+            if folder:
+                if os.path.isfile(folder):
+                    if folder.lower().endswith(".json"):
+                        cmd.extend(["--mode", "pipeline", "--schedule", folder])
+                    else:
+                        cmd.extend(["--mode", "custom", "--folder", os.path.dirname(folder)])
+                elif os.path.isdir(folder):
+                    if os.path.isfile(os.path.join(folder, "schedule.json")):
+                        cmd.extend(["--mode", "pipeline", "--schedule", os.path.join(folder, "schedule.json")])
+                    else:
+                        cmd.extend(["--mode", "custom", "--folder", folder])
             elif export_dir and os.path.isfile(os.path.join(export_dir, "schedule.json")):
                 cmd.extend(["--mode", "pipeline", "--schedule", os.path.join(export_dir, "schedule.json")])
 
@@ -1859,17 +1906,33 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
             month_str = f"{year}-{int(month):02d}"
 
             sch_path = None
-            if export_dir and os.path.isfile(os.path.join(export_dir, "schedule.json")):
+            if folder:
+                if os.path.isfile(folder) and folder.lower().endswith(".json"):
+                    sch_path = folder
+                elif os.path.isfile(folder):
+                    folder_dir = os.path.dirname(folder)
+                    temp_sch = os.path.join(out_dir, "temp_dinasan_schedule.json")
+                    subprocess.run([
+                        sys.executable, os.path.join(ENGINE_DIR, "scheduler.py"),
+                        "--pdf-dir", folder_dir,
+                        "--output", temp_sch
+                    ], capture_output=True, text=True, cwd=BASE_DIR)
+                    if os.path.isfile(temp_sch):
+                        sch_path = temp_sch
+                elif os.path.isdir(folder):
+                    if os.path.isfile(os.path.join(folder, "schedule.json")):
+                        sch_path = os.path.join(folder, "schedule.json")
+                    else:
+                        temp_sch = os.path.join(out_dir, "temp_dinasan_schedule.json")
+                        subprocess.run([
+                            sys.executable, os.path.join(ENGINE_DIR, "scheduler.py"),
+                            "--pdf-dir", folder,
+                            "--output", temp_sch
+                        ], capture_output=True, text=True, cwd=BASE_DIR)
+                        if os.path.isfile(temp_sch):
+                            sch_path = temp_sch
+            elif export_dir and os.path.isfile(os.path.join(export_dir, "schedule.json")):
                 sch_path = os.path.join(export_dir, "schedule.json")
-            elif folder and os.path.isdir(folder):
-                temp_sch = os.path.join(out_dir, "temp_dinasan_schedule.json")
-                subprocess.run([
-                    sys.executable, os.path.join(ENGINE_DIR, "scheduler.py"),
-                    "--pdf-dir", folder,
-                    "--output", temp_sch
-                ], capture_output=True, text=True, cwd=BASE_DIR)
-                if os.path.isfile(temp_sch):
-                    sch_path = temp_sch
 
             if not sch_path:
                 sch_path = os.path.join(out_dir, "temp_dinasan_schedule.json")
@@ -1969,6 +2032,17 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
                 self._json({"path": None, "name": None})
         except Exception as e:
             _log(f"Folder selection error: {e}")
+            self._json({"error": str(e)}, 500)
+
+    def _handle_select_file(self):
+        try:
+            fpath = _pick_file_native()
+            if fpath:
+                self._json({"path": fpath, "name": os.path.basename(fpath)})
+            else:
+                self._json({"path": None, "name": None})
+        except Exception as e:
+            _log(f"File selection error: {e}")
             self._json({"error": str(e)}, 500)
 
     def _handle_save_file(self):
@@ -2197,7 +2271,7 @@ def main():
     print("[OK] Opening desktop window...")
 
     webview.create_window(
-        "Sintelis Utility 2.0 (v1.5.0)",
+        "Sintelis Utility 2.0 (v1.5.1)",
         f"http://localhost:{PORT}",
         width=1400,
         height=900,
