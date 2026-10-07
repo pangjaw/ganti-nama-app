@@ -7,6 +7,8 @@ sys.setrecursionlimit(5000)
 _cwd = os.getcwd()
 dist_dir = Path(_cwd) / 'dist'
 if not dist_dir.is_dir():
+    raise SystemExit(f'ERROR: Build not found at {dist_dir}. Run npm run build first.')
+
 # Bersihkan sisa .exe lama di dist jika ada, agar tidak terjadi recursive bundling
 for old_exe in dist_dir.glob('*.exe'):
     try:
