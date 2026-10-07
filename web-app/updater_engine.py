@@ -12,7 +12,7 @@ import threading
 import subprocess
 import tempfile
 
-APP_VERSION = "1.5.4"
+APP_VERSION = "1.5.5"
 DEFAULT_UPDATE_URL = "https://update.sintelboo.my.id/version.json"
 
 _update_state = {
@@ -155,43 +155,43 @@ def apply_update_and_restart():
 
     current_pid = os.getpid()
 
-    # Script restart batch yang handal di Windows:
-    # 1. Pastikan proses lama berhenti (taskkill target PID)
-    # 2. Copy timpa file exe
-    # 3. Jalankan aplikasi baru via explorer.exe (memunculkan window GUI interaktif di desktop pengguna)
+    # Script restart PowerShell yang tangguh & anti-gagal di Windows:
+    # 1. Pastikan proses lama berhenti (Stop-Process target PID)
+    # 2. Loop copy dengan jeda nyata hingga sistem operasi melepas file lock (hingga 30 detik)
+    # 3. Jalankan aplikasi baru via Start-Process
     # 4. Bersihkan file sementara
-    bat_content = f"""@echo off
-set "TARGET={target_exe}"
-set "TEMP_EXE={temp_exe}"
+    ps_content = f"""
+$target = "{target_exe}"
+$temp = "{temp_exe}"
+$pid_to_kill = {current_pid}
 
-:: Tunggu sejenak lalu pastikan proses lama benar-benar mati
-timeout /t 1 /nobreak > nul
-taskkill /F /PID {current_pid} > nul 2>&1
-timeout /t 1 /nobreak > nul
+try {{ Stop-Process -Id $pid_to_kill -Force -ErrorAction SilentlyContinue }} catch {{}}
+Start-Sleep -Seconds 2
 
-:retry_copy
-copy /y "%TEMP_EXE%" "%TARGET%" > nul 2>&1
-if errorlevel 1 (
-    timeout /t 1 /nobreak > nul
-    goto retry_copy
-)
+$copied = $false
+for ($i = 0; $i -lt 30; $i++) {{
+    try {{
+        Copy-Item -LiteralPath $temp -Destination $target -Force -ErrorAction Stop
+        $copied = $true
+        break
+    }} catch {{
+        Start-Sleep -Seconds 1
+    }}
+}}
 
-:: Jalankan aplikasi baru menggunakan explorer.exe (memastikan window GUI muncul di desktop pengguna)
-start "" explorer.exe "%TARGET%"
-
-:: Bersihkan file sementara
-del "%TEMP_EXE%" > nul 2>&1
-(goto) 2>nul & del "%~f0"
-exit
+if ($copied) {{
+    try {{ Remove-Item -LiteralPath $temp -Force -ErrorAction SilentlyContinue }} catch {{}}
+    Start-Process -FilePath $target
+}}
 """
-    bat_file = os.path.join(tempfile.gettempdir(), "sintelis_updater.bat")
-    with open(bat_file, "w", encoding="utf-8") as f:
-        f.write(bat_content)
+    ps_file = os.path.join(tempfile.gettempdir(), "sintelis_updater.ps1")
+    with open(ps_file, "w", encoding="utf-8") as f:
+        f.write(ps_content)
 
     DETACHED_PROCESS = 0x00000008
     CREATE_NO_WINDOW = 0x08000000
     subprocess.Popen(
-        ["cmd.exe", "/c", bat_file],
+        ["powershell.exe", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", ps_file],
         creationflags=DETACHED_PROCESS | CREATE_NO_WINDOW,
         close_fds=True
     )

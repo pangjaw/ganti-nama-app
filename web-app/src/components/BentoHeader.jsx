@@ -4,7 +4,7 @@ export default function BentoHeader({
   engineStatus = 'Siap',
   activePreset = 'Resor 1.21 Bogor',
   filesCount = 0,
-  currentVersion = 'v1.5.4',
+  currentVersion = 'v1.5.5',
   mainTab = 'ocr',
   title = '',
   subtitle = ''

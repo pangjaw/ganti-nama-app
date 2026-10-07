@@ -1863,56 +1863,73 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
 
             out_dir = os.path.join(BASE_DIR, "logs")
             os.makedirs(out_dir, exist_ok=True)
+            _log(f"Export Tablo request: folder={folder}, year={year}, month={month}")
 
-            is_frozen = getattr(sys, "frozen", False)
-            script_path = os.path.join(ENGINE_DIR, "export_tablo_excel.py")
-            cmd = [sys.executable, "--run-script", script_path] if is_frozen else [sys.executable, script_path]
-            cmd.extend(["--output-dir", out_dir])
-            if year:
-                cmd.extend(["--year", str(year)])
-            if month:
-                cmd.extend(["--month", str(month)])
+            try:
+                from timemark_engine.export_tablo_excel import generate_tablo_workbook
+                from timemark_engine.scheduler import build_schedule, load_mapping, load_data_acuan
+            except ImportError:
+                sys.path.insert(0, ENGINE_DIR)
+                from export_tablo_excel import generate_tablo_workbook
+                from scheduler import build_schedule, load_mapping, load_data_acuan
 
+            m_path = os.path.join(ENGINE_DIR, "asset_waktu_mapping.json")
+            if not os.path.isfile(m_path) and os.path.isfile(os.path.join(BASE_DIR, "config", "asset_waktu_mapping.json")):
+                m_path = os.path.join(BASE_DIR, "config", "asset_waktu_mapping.json")
+            mapping = load_mapping(m_path) if os.path.isfile(m_path) else {}
+
+            a_path = os.path.join(ENGINE_DIR, "data_acuan_tenaga_gabungan.json")
+            if not os.path.isfile(a_path) and os.path.isfile(os.path.join(BASE_DIR, "config", "data_acuan_tenaga_gabungan.json")):
+                a_path = os.path.join(BASE_DIR, "config", "data_acuan_tenaga_gabungan.json")
+            acuan = load_data_acuan(a_path) if os.path.isfile(a_path) else {}
+
+            sched_data = None
             if folder:
-                if os.path.isfile(folder):
-                    if folder.lower().endswith(".json"):
-                        cmd.extend(["--mode", "pipeline", "--schedule", folder])
-                    else:
-                        cmd.extend(["--mode", "custom", "--folder", os.path.dirname(folder)])
+                if os.path.isfile(folder) and folder.lower().endswith(".json"):
+                    with open(folder, "r", encoding="utf-8") as f:
+                        sched_data = json.load(f)
                 elif os.path.isdir(folder):
-                    if os.path.isfile(os.path.join(folder, "schedule.json")):
-                        cmd.extend(["--mode", "pipeline", "--schedule", os.path.join(folder, "schedule.json")])
+                    sch_cand = os.path.join(folder, "schedule.json")
+                    if os.path.isfile(sch_cand):
+                        with open(sch_cand, "r", encoding="utf-8") as f:
+                            sched_data = json.load(f)
                     else:
-                        cmd.extend(["--mode", "custom", "--folder", folder])
+                        from pathlib import Path
+                        photos_dir = os.path.join(BASE_DIR, "03_photos_export")
+                        sched_data = build_schedule(
+                            pdf_dir=Path(folder).resolve(),
+                            photos_dir=Path(photos_dir).resolve(),
+                            mapping=mapping,
+                            acuan=acuan,
+                            jam_mulai=7 * 60,
+                            jam_selesai=18 * 60,
+                            tim_max=2
+                        )
+                        temp_sch = os.path.join(out_dir, "temp_custom_schedule.json")
+                        with open(temp_sch, "w", encoding="utf-8") as f:
+                            json.dump(sched_data, f, indent=2, ensure_ascii=False)
             elif export_dir and os.path.isfile(os.path.join(export_dir, "schedule.json")):
-                cmd.extend(["--mode", "pipeline", "--schedule", os.path.join(export_dir, "schedule.json")])
+                with open(os.path.join(export_dir, "schedule.json"), "r", encoding="utf-8") as f:
+                    sched_data = json.load(f)
 
-            res = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                cwd=BASE_DIR,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+            if not sched_data or not sched_data.get("schedules"):
+                err_msg = "Tidak ditemukan jadwal atau berkas PDF valid untuk diekspor ke Tablo."
+                _log(f"Export Tablo failed: {err_msg}")
+                self._json({"ok": False, "error": err_msg})
+                return
+
+            file_path = generate_tablo_workbook(
+                sched_data,
+                year=int(year) if year else None,
+                month=int(month) if month else None,
+                output_path=out_dir
             )
-            file_path = None
-            if res.stdout:
-                for line in res.stdout.splitlines():
-                    if "[OUTPUT_FILE]" in line:
-                        file_path = line.replace("[OUTPUT_FILE]", "").strip()
-                        break
-
-            if not file_path:
-                cand = [os.path.join(out_dir, f) for f in os.listdir(out_dir) if f.startswith("TABLO") and f.endswith(".xlsx")]
-                if cand:
-                    cand.sort(key=os.path.getmtime, reverse=True)
-                    file_path = cand[0]
-
-            if file_path and os.path.isfile(file_path):
-                self._json({"ok": True, "filePath": file_path})
-            else:
-                self._json({"ok": False, "error": res.stderr or "Gagal membuat berkas Tablo Excel."})
+            _log(f"Export Tablo success: {file_path}")
+            self._json({"ok": True, "filePath": str(file_path)})
         except Exception as e:
             _log(f"Export tablo error: {e}")
+            import traceback
+            _log(traceback.format_exc())
             self._json({"ok": False, "error": str(e)}, 500)
 
     def _handle_timemark_export_dinasan(self):
@@ -1928,60 +1945,66 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
 
             out_dir = os.path.join(BASE_DIR, "logs")
             os.makedirs(out_dir, exist_ok=True)
-            month_str = f"{year}-{int(month):02d}"
+            _log(f"Export Dinasan request: folder={folder}, year={year}, month={month}")
 
-            is_frozen = getattr(sys, "frozen", False)
-            script_path = os.path.join(ENGINE_DIR, "export_dinasan_excel.py")
-            cmd = [sys.executable, "--run-script", script_path] if is_frozen else [sys.executable, script_path]
-            cmd.extend([
-                "--month", month_str,
-                "--config", os.path.join(ENGINE_DIR, "daftar_pegawai.json")
-            ])
-            if with_personnel:
-                cmd.append("--with-personnel")
+            try:
+                from timemark_engine.export_dinasan_excel import build_dinasan_workbook, MONTH_NAMES_ID
+                from timemark_engine.scheduler import build_schedule, load_mapping, load_data_acuan
+            except ImportError:
+                sys.path.insert(0, ENGINE_DIR)
+                from export_dinasan_excel import build_dinasan_workbook, MONTH_NAMES_ID
+                from scheduler import build_schedule, load_mapping, load_data_acuan
 
+            cfg_path = os.path.join(ENGINE_DIR, "daftar_pegawai.json")
+            if not os.path.isfile(cfg_path):
+                cfg_path = os.path.join(BASE_DIR, "config", "daftar_pegawai.json")
+
+            temp_sch = os.path.join(out_dir, "temp_dinasan_schedule.json")
             if folder:
-                if os.path.isfile(folder):
-                    if folder.lower().endswith(".json"):
-                        cmd.extend(["--schedule", folder])
-                    else:
-                        cmd.extend(["--folder", os.path.dirname(folder)])
+                if os.path.isfile(folder) and folder.lower().endswith(".json"):
+                    temp_sch = folder
                 elif os.path.isdir(folder):
-                    if os.path.isfile(os.path.join(folder, "schedule.json")):
-                        cmd.extend(["--schedule", os.path.join(folder, "schedule.json")])
+                    sch_cand = os.path.join(folder, "schedule.json")
+                    if os.path.isfile(sch_cand):
+                        temp_sch = sch_cand
                     else:
-                        cmd.extend(["--folder", folder])
+                        from pathlib import Path
+                        m_path = os.path.join(ENGINE_DIR, "asset_waktu_mapping.json")
+                        mapping = load_mapping(m_path) if os.path.isfile(m_path) else {}
+                        a_path = os.path.join(ENGINE_DIR, "data_acuan_tenaga_gabungan.json")
+                        acuan = load_data_acuan(a_path) if os.path.isfile(a_path) else {}
+                        sched_data = build_schedule(
+                            pdf_dir=Path(folder).resolve(),
+                            photos_dir=Path(os.path.join(BASE_DIR, "03_photos_export")).resolve(),
+                            mapping=mapping,
+                            acuan=acuan,
+                            jam_mulai=7 * 60,
+                            jam_selesai=18 * 60,
+                            tim_max=2
+                        )
+                        with open(temp_sch, "w", encoding="utf-8") as f:
+                            json.dump(sched_data, f, indent=2, ensure_ascii=False)
             elif export_dir and os.path.isfile(os.path.join(export_dir, "schedule.json")):
-                cmd.extend(["--schedule", os.path.join(export_dir, "schedule.json")])
-            else:
-                cmd.extend(["--schedule", os.path.join(out_dir, "temp_dinasan_schedule.json")])
+                temp_sch = os.path.join(export_dir, "schedule.json")
 
-            res = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                cwd=BASE_DIR,
-                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+            m_name = MONTH_NAMES_ID.get(int(month), f"BULAN_{month}")
+            out_xlsx = os.path.join(out_dir, f"DAFTAR_DINASAN_PEGAWAI_{m_name}_{year}.xlsx")
+
+            from pathlib import Path
+            build_dinasan_workbook(
+                year=int(year),
+                month=int(month),
+                schedule_path=Path(temp_sch),
+                config_path=Path(cfg_path),
+                output_path=Path(out_xlsx),
+                with_personnel=bool(with_personnel)
             )
-            file_path = None
-            if res.stdout:
-                for line in res.stdout.splitlines():
-                    if "->" in line:
-                        file_path = line.split("->")[-1].strip()
-                        break
-
-            if not file_path:
-                cand = [os.path.join(out_dir, f) for f in os.listdir(out_dir) if "DAFTAR_DINASAN_PEGAWAI" in f and f.endswith(".xlsx")]
-                if cand:
-                    cand.sort(key=os.path.getmtime, reverse=True)
-                    file_path = cand[0]
-
-            if file_path and os.path.isfile(file_path):
-                self._json({"ok": True, "filePath": file_path})
-            else:
-                self._json({"ok": False, "error": res.stderr or "Gagal membuat berkas Jadwal Dinasan Excel."})
+            _log(f"Export Dinasan success: {out_xlsx}")
+            self._json({"ok": True, "filePath": out_xlsx})
         except Exception as e:
             _log(f"Export dinasan error: {e}")
+            import traceback
+            _log(traceback.format_exc())
             self._json({"ok": False, "error": str(e)}, 500)
 
     def _handle_timemark_open_file(self):
@@ -2315,7 +2338,7 @@ def main():
     print("[OK] Opening desktop window...")
 
     webview.create_window(
-        "Sintelis Utility 2.0 (v1.5.4)",
+        "Sintelis Utility 2.0 (v1.5.5)",
         f"http://localhost:{PORT}",
         width=1400,
         height=900,
