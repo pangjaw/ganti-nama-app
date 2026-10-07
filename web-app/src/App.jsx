@@ -37,12 +37,33 @@ export default function App() {
   const [paused, setPaused] = useState(false);
   const [errorFileNames, setErrorFileNames] = useState([]);
   const [failedSaveItems, setFailedSaveItems] = useState([]);
+  const [updateAvailable, setUpdateAvailable] = useState(false);
+  const [activePresetName, setActivePresetName] = useState('');
   const logEndRef = useRef();
   const inputRef = useRef();
   const cancelledRef = useRef(false);
   const pausedRef = useRef(false);
   const resumeRef = useRef(null);
   const processRef = useRef(null); // ref ke handleProcess agar handleRetryErrors tidak stale
+
+  // Sinkronisasi update status & preset aktif
+  useEffect(() => {
+    fetch('/api/update/check')
+      .then(r => r.json())
+      .then(d => {
+        if (d && d.updateAvailable) setUpdateAvailable(true);
+      })
+      .catch(() => {});
+
+    fetch('/api/timemark/pegawai')
+      .then(r => r.json())
+      .then(d => {
+        if (d && d.active_preset_name) {
+          setActivePresetName(d.active_preset_name);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   // Force re-render key — digunakan saat window jadi visible lagi setelah minimize
   // Bug WebView2: React state changes saat window hidden tidak di-paint.
@@ -673,17 +694,17 @@ export default function App() {
         isCollapsed={isSidebarCollapsed}
         setIsCollapsed={setIsSidebarCollapsed}
         onOpenUpdateModal={() => setShowUpdateModal(true)}
-        appVersion="v1.5.4"
+        appVersion="v1.5.6"
       />
 
       {/* ── Main Workspace ── */}
       <main className="app-main-workspace">
         {/* Bento Stats & Workspace Title Header */}
         <BentoHeader
-          engineStatus={processing ? 'Memproses Data...' : paused ? 'Dijeda' : 'Siap Digunakan'}
-          activePreset={instansi}
-          filesCount={files.length}
-          currentVersion="v1.5.4"
+          currentVersion="v1.5.6"
+          updateAvailable={updateAvailable}
+          onOpenUpdateModal={() => setShowUpdateModal(true)}
+          activePreset={activePresetName || "Standar (Resor 1.21 Bogor)"}
           mainTab={mainTab}
         />
 
@@ -691,7 +712,10 @@ export default function App() {
         <div style={{ display: 'none' }}>
           <UpdateBanner
             onOpenModal={() => setShowUpdateModal(true)}
-            onAutoOpen={() => setShowUpdateModal(true)}
+            onAutoOpen={(data) => {
+              if (data && data.updateAvailable) setUpdateAvailable(true);
+              setShowUpdateModal(true);
+            }}
           />
         </div>
 

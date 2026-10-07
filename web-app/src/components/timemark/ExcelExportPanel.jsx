@@ -5,11 +5,16 @@ export default function ExcelExportPanel({ targetDir, exportDir }) {
   const currentMonth = new Date().getMonth() + 1;
 
   const [selectedSourceDir, setSelectedSourceDir] = useState(targetDir || exportDir || '');
+  const [selectedOutputDir, setSelectedOutputDir] = useState('');
   const [exportYear, setExportYear] = useState(currentYear);
   const [exportMonth, setExportMonth] = useState(currentMonth);
   const [exportDocType, setExportDocType] = useState('both'); // 'both' | 'tablo' | 'dinasan'
   const [withPersonnel, setWithPersonnel] = useState(true);
   const [isGenerating, setIsGenerating] = useState(false);
+
+  const [presets, setPresets] = useState([]);
+  const [selectedPresetId, setSelectedPresetId] = useState('');
+  const [activePresetName, setActivePresetName] = useState('');
 
   const [historyFiles, setHistoryFiles] = useState([]);
   const [feedback, setFeedback] = useState(null);
@@ -20,6 +25,43 @@ export default function ExcelExportPanel({ targetDir, exportDir }) {
     }
   }, [targetDir, exportDir]);
 
+  // Load employee presets on mount
+  useEffect(() => {
+    fetch('/api/timemark/pegawai')
+      .then(res => res.json())
+      .then(data => {
+        if (data.ok) {
+          if (data.presets && data.presets.length > 0) {
+            setPresets(data.presets);
+          }
+          if (data.active_preset_id) {
+            setSelectedPresetId(data.active_preset_id);
+          } else if (data.presets && data.presets.length > 0) {
+            setSelectedPresetId(data.presets[0].id);
+          }
+          if (data.active_preset_name) {
+            setActivePresetName(data.active_preset_name);
+          }
+        }
+      })
+      .catch(err => console.error('Gagal mengambil daftar preset pegawai:', err));
+  }, []);
+
+  const handlePresetChange = async (newId) => {
+    setSelectedPresetId(newId);
+    const found = presets.find(p => p.id === newId);
+    if (found) setActivePresetName(found.name);
+    try {
+      await fetch('/api/timemark/set-active-preset', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ presetId: newId })
+      });
+    } catch (err) {
+      console.warn('Gagal sinkronisasi active preset:', err);
+    }
+  };
+
   const months = [
     { num: 1, name: 'Januari' }, { num: 2, name: 'Februari' }, { num: 3, name: 'Maret' },
     { num: 4, name: 'April' }, { num: 5, name: 'Mei' }, { num: 6, name: 'Juni' },
@@ -27,7 +69,7 @@ export default function ExcelExportPanel({ targetDir, exportDir }) {
     { num: 10, name: 'Oktober' }, { num: 11, name: 'November' }, { num: 12, name: 'Desember' }
   ];
 
-  // Pick folder native
+  // Pick folder native (Sumber)
   const handlePickFolder = async () => {
     try {
       const res = await fetch('/api/select-folder', { method: 'POST' });
@@ -42,7 +84,7 @@ export default function ExcelExportPanel({ targetDir, exportDir }) {
     }
   };
 
-  // Pick file native
+  // Pick file native (Sumber)
   const handlePickFile = async () => {
     try {
       const res = await fetch('/api/select-file', { method: 'POST' });
@@ -54,6 +96,21 @@ export default function ExcelExportPanel({ targetDir, exportDir }) {
       }
     } catch (err) {
       alert('Gagal membuka dialog pemilihan berkas: ' + err.message);
+    }
+  };
+
+  // Pick folder native (Output / Penyimpanan)
+  const handlePickOutputDir = async () => {
+    try {
+      const res = await fetch('/api/select-folder', { method: 'POST' });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.path) {
+          setSelectedOutputDir(data.path);
+        }
+      }
+    } catch (err) {
+      alert('Gagal membuka dialog pemilihan folder output: ' + err.message);
     }
   };
 
@@ -79,8 +136,10 @@ export default function ExcelExportPanel({ targetDir, exportDir }) {
           body: JSON.stringify({
             folder: effectiveFolder,
             exportDir: exportDir || effectiveFolder,
+            outputDir: selectedOutputDir || undefined,
             year: exportYear,
-            month: exportMonth
+            month: exportMonth,
+            presetId: selectedPresetId || undefined
           })
         });
         const dataTablo = await resTablo.json();
@@ -100,9 +159,11 @@ export default function ExcelExportPanel({ targetDir, exportDir }) {
           body: JSON.stringify({
             folder: effectiveFolder,
             exportDir: exportDir || effectiveFolder,
+            outputDir: selectedOutputDir || undefined,
             year: exportYear,
             month: exportMonth,
-            withPersonnel
+            withPersonnel,
+            presetId: selectedPresetId || undefined
           })
         });
         const dataDinasan = await resDinasan.json();
@@ -234,6 +295,55 @@ export default function ExcelExportPanel({ targetDir, exportDir }) {
         </div>
       </div>
 
+      {/* Pemilihan Folder Output Penyimpanan */}
+      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '1rem 1.25rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem' }}>
+          <label style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+            <span>💾</span> Folder Simpan Output Excel:
+          </label>
+          <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+            {selectedOutputDir ? 'Folder penyimpanan kustom dipilih' : 'Kosong = otomatis disimpan ke folder logs/'}
+          </span>
+        </div>
+        <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+          <input
+            type="text"
+            value={selectedOutputDir}
+            onChange={e => setSelectedOutputDir(e.target.value)}
+            placeholder="Default (otomatis disimpan ke folder logs)..."
+            style={{
+              flex: '1 1 300px',
+              padding: '0.55rem 0.85rem',
+              background: 'var(--bg-secondary)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '6px',
+              color: 'var(--text-primary)',
+              fontSize: '0.85rem',
+              fontFamily: 'monospace'
+            }}
+          />
+          <button
+            onClick={handlePickOutputDir}
+            title="Pilih folder tujuan untuk menyimpan berkas Tablo & Jadwal Dinasan"
+            style={{
+              padding: '0.55rem 1rem',
+              background: 'var(--bg-card-hover)',
+              color: 'var(--text-primary)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '6px',
+              cursor: 'pointer',
+              fontWeight: 500,
+              fontSize: '0.825rem',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.35rem'
+            }}
+          >
+            <span>📂</span> Pilih Folder Simpan...
+          </button>
+        </div>
+      </div>
+
       {feedback && (
         <div style={{
           padding: '0.85rem 1.15rem',
@@ -347,6 +457,42 @@ export default function ExcelExportPanel({ targetDir, exportDir }) {
             </div>
 
           </div>
+        </div>
+
+        {/* Pilihan Profil Preset Pegawai */}
+        <div style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '0.85rem 1rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+            <label style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <span>👤</span> Profil Pegawai / Roster Tim (KUPT & Personil):
+            </label>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+              Menentukan KUPT dan roster personil di Tablo & Jadwal Dinasan
+            </span>
+          </div>
+          <select
+            value={selectedPresetId}
+            onChange={e => handlePresetChange(e.target.value)}
+            style={{
+              width: '100%',
+              padding: '0.55rem 0.75rem',
+              background: 'var(--bg-card)',
+              border: '1px solid var(--border-color)',
+              borderRadius: '6px',
+              color: 'var(--text-primary)',
+              fontSize: '0.85rem',
+              fontWeight: 500
+            }}
+          >
+            {presets.length > 0 ? (
+              presets.map(p => (
+                <option key={p.id} value={p.id}>
+                  {p.name} {p.id === selectedPresetId ? '✓ (Aktif)' : ''}
+                </option>
+              ))
+            ) : (
+              <option value="">Standar (KUPT Resor Sintel 1.21 Bogor)</option>
+            )}
+          </select>
         </div>
 
         {/* Unified Periode Selector (Satu Pilihan Bulan & Tahun) */}

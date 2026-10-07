@@ -273,7 +273,7 @@ def match_asset_to_tablo_group(item: dict) -> int:
     return 0
 
 
-def generate_tablo_workbook(schedule_data: dict, year: int = None, month: int = None, output_path: Path = None) -> str:
+def generate_tablo_workbook(schedule_data: dict, year: int = None, month: int = None, output_path: Path = None, config: dict = None, config_path: Path = None) -> str:
     schedules = schedule_data.get("schedules", [])
 
     # 1. Detect Year and Month if not provided
@@ -297,7 +297,13 @@ def generate_tablo_workbook(schedule_data: dict, year: int = None, month: int = 
     num_days = calendar.monthrange(year, month)[1]
 
     # 2. Load Personnel Config
-    cfg = load_pegawai_config()
+    if config and isinstance(config, dict):
+        cfg = config
+    elif config_path and Path(config_path).exists():
+        cfg = load_pegawai_config(config_path)
+    else:
+        cfg = load_pegawai_config()
+
     resor = cfg.get("resor", {})
     resor_nama = resor.get("nama", "S. SLAMET RIYADI").strip().upper()
     resor_nipp = str(resor.get("nipp", "-")).strip()

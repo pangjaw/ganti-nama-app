@@ -1356,6 +1356,54 @@ def _save_file_dialog_native(default_name):
     return None
 
 
+def get_active_pegawai_config(preset_id=None):
+    """
+    Mengambil konfigurasi pegawai aktif berdasarkan preset_id (jika diberikan),
+    atau active_preset_id dari employee_presets.json, atau fallback ke daftar_pegawai.json.
+    """
+    cand_presets = [
+        os.path.join(APP_DATA_DIR, "employee_presets.json"),
+        os.path.join(ENGINE_DIR, "employee_presets.json"),
+        os.path.join(BASE_DIR, "config", "employee_presets.json"),
+    ]
+    presets_data = {}
+    for cp in cand_presets:
+        if os.path.isfile(cp):
+            try:
+                with open(cp, "r", encoding="utf-8") as f:
+                    presets_data = json.load(f)
+                break
+            except Exception:
+                pass
+
+    target_pid = preset_id or presets_data.get("active_preset_id")
+    if target_pid and "presets" in presets_data:
+        for p in presets_data["presets"]:
+            if p.get("id") == target_pid and p.get("data"):
+                return p["data"], p.get("name", "Preset Kustom")
+
+    cand_pegawai = [
+        os.path.join(APP_DATA_DIR, "daftar_pegawai.json"),
+        os.path.join(ENGINE_DIR, "daftar_pegawai.json"),
+        os.path.join(BASE_DIR, "config", "daftar_pegawai.json"),
+    ]
+    for cp in cand_pegawai:
+        if os.path.isfile(cp):
+            try:
+                with open(cp, "r", encoding="utf-8") as f:
+                    d = json.load(f)
+                    first_pname = presets_data.get("presets", [{}])[0].get("name", "Standar") if presets_data.get("presets") else "Standar"
+                    return d, first_pname
+            except Exception:
+                pass
+
+    try:
+        from timemark_engine.employee_manager import load_pegawai_config
+        return load_pegawai_config(), "Standar"
+    except Exception:
+        return {}, "Standar"
+
+
 class ApiHandler(http.server.SimpleHTTPRequestHandler):
     """HTTP handler: serve static files + /api/* endpoints"""
 
@@ -1490,6 +1538,8 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
             self._handle_timemark_replace_photo()
         elif parsed.path == "/api/timemark/pegawai":
             self._handle_timemark_pegawai_post()
+        elif parsed.path == "/api/timemark/set-active-preset":
+            self._handle_timemark_set_active_preset()
         elif parsed.path == "/api/timemark/koreksi-serat-optik":
             self._handle_timemark_koreksi_serat_optik()
         elif parsed.path == "/api/timemark/audit-personil":
@@ -1605,8 +1655,17 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
 
     def _handle_timemark_pegawai_get(self):
         try:
-            pegawai_file = os.path.join(ENGINE_DIR, "daftar_pegawai.json")
-            presets_file = os.path.join(ENGINE_DIR, "employee_presets.json")
+            pegawai_file = os.path.join(APP_DATA_DIR, "daftar_pegawai.json")
+            if not os.path.isfile(pegawai_file):
+                pegawai_file = os.path.join(ENGINE_DIR, "daftar_pegawai.json")
+            if not os.path.isfile(pegawai_file):
+                pegawai_file = os.path.join(BASE_DIR, "config", "daftar_pegawai.json")
+
+            presets_file = os.path.join(APP_DATA_DIR, "employee_presets.json")
+            if not os.path.isfile(presets_file):
+                presets_file = os.path.join(ENGINE_DIR, "employee_presets.json")
+            if not os.path.isfile(presets_file):
+                presets_file = os.path.join(BASE_DIR, "config", "employee_presets.json")
 
             daftar_pegawai = {}
             if os.path.isfile(pegawai_file):
@@ -1618,14 +1677,77 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
                 with open(presets_file, "r", encoding="utf-8") as f:
                     presets_data = json.load(f)
 
+            active_id = presets_data.get("active_preset_id", "")
+            active_name = ""
+            if active_id:
+                for p in presets_data.get("presets", []):
+                    if p.get("id") == active_id:
+                        active_name = p.get("name", "")
+                        break
+            if not active_name and presets_data.get("presets"):
+                active_name = presets_data["presets"][0].get("name", "Standar")
+
             self._json({
                 "ok": True,
                 "daftar_pegawai": daftar_pegawai,
                 "presets": presets_data.get("presets", []),
-                "active_preset_id": presets_data.get("active_preset_id", "")
+                "active_preset_id": active_id,
+                "active_preset_name": active_name
             })
         except Exception as e:
             _log(f"Get pegawai error: {e}")
+            self._json({"ok": False, "error": str(e)}, 500)
+
+    def _handle_timemark_set_active_preset(self):
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length)
+            data = json.loads(body) if body else {}
+            preset_id = data.get("presetId") or data.get("active_preset_id")
+
+            if not preset_id:
+                self._json({"ok": False, "error": "Preset ID tidak diberikan."}, 400)
+                return
+
+            presets_file = os.path.join(APP_DATA_DIR, "employee_presets.json")
+            if not os.path.isfile(presets_file):
+                presets_file = os.path.join(ENGINE_DIR, "employee_presets.json")
+
+            p_data = {}
+            if os.path.isfile(presets_file):
+                with open(presets_file, "r", encoding="utf-8") as f:
+                    p_data = json.load(f)
+
+            p_data["active_preset_id"] = preset_id
+            selected_preset = next((p for p in p_data.get("presets", []) if p.get("id") == preset_id), None)
+
+            target_dirs = [APP_DATA_DIR, ENGINE_DIR]
+            for td in target_dirs:
+                try:
+                    os.makedirs(td, exist_ok=True)
+                    with open(os.path.join(td, "employee_presets.json"), "w", encoding="utf-8") as f:
+                        json.dump(p_data, f, indent=2, ensure_ascii=False)
+                except Exception:
+                    pass
+
+            if selected_preset and selected_preset.get("data"):
+                for td in target_dirs:
+                    try:
+                        os.makedirs(td, exist_ok=True)
+                        with open(os.path.join(td, "daftar_pegawai.json"), "w", encoding="utf-8") as f:
+                            json.dump(selected_preset["data"], f, indent=2, ensure_ascii=False)
+                    except Exception:
+                        pass
+
+            _log(f"Active preset changed to: {preset_id} ({selected_preset.get('name') if selected_preset else ''})")
+            self._json({
+                "ok": True,
+                "active_preset_id": preset_id,
+                "active_preset_name": selected_preset.get("name") if selected_preset else "",
+                "daftar_pegawai": selected_preset.get("data") if selected_preset else {}
+            })
+        except Exception as e:
+            _log(f"Set active preset error: {e}")
             self._json({"ok": False, "error": str(e)}, 500)
 
     def _handle_timemark_pegawai_post(self):
@@ -1634,14 +1756,21 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
             body = self.rfile.read(length)
             data = json.loads(body) if body else {}
 
-            pegawai_file = os.path.join(ENGINE_DIR, "daftar_pegawai.json")
-            presets_file = os.path.join(ENGINE_DIR, "employee_presets.json")
-
+            target_dirs = [APP_DATA_DIR, ENGINE_DIR]
             if "daftar_pegawai" in data:
-                with open(pegawai_file, "w", encoding="utf-8") as f:
-                    json.dump(data["daftar_pegawai"], f, indent=2, ensure_ascii=False)
+                for td in target_dirs:
+                    try:
+                        os.makedirs(td, exist_ok=True)
+                        pf = os.path.join(td, "daftar_pegawai.json")
+                        with open(pf, "w", encoding="utf-8") as f:
+                            json.dump(data["daftar_pegawai"], f, indent=2, ensure_ascii=False)
+                    except Exception:
+                        pass
 
             if "presets" in data or "active_preset_id" in data:
+                presets_file = os.path.join(APP_DATA_DIR, "employee_presets.json")
+                if not os.path.isfile(presets_file):
+                    presets_file = os.path.join(ENGINE_DIR, "employee_presets.json")
                 existing_presets = {}
                 if os.path.isfile(presets_file):
                     try:
@@ -1653,8 +1782,14 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
                     existing_presets["presets"] = data["presets"]
                 if "active_preset_id" in data:
                     existing_presets["active_preset_id"] = data["active_preset_id"]
-                with open(presets_file, "w", encoding="utf-8") as f:
-                    json.dump(existing_presets, f, indent=2, ensure_ascii=False)
+                for td in target_dirs:
+                    try:
+                        os.makedirs(td, exist_ok=True)
+                        pf = os.path.join(td, "employee_presets.json")
+                        with open(pf, "w", encoding="utf-8") as f:
+                            json.dump(existing_presets, f, indent=2, ensure_ascii=False)
+                    except Exception:
+                        pass
 
             self._json({"ok": True, "message": "Profil pegawai berhasil disimpan."})
         except Exception as e:
@@ -1860,10 +1995,21 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
             export_dir = data.get("exportDir")
             year = data.get("year")
             month = data.get("month")
+            preset_id = data.get("presetId") or data.get("preset_id")
+            output_dir = data.get("outputDir") or data.get("outDir")
 
-            out_dir = os.path.join(BASE_DIR, "logs")
+            from pathlib import Path
+            out_dir = Path(output_dir) if (output_dir and os.path.isdir(output_dir)) else Path(os.path.join(BASE_DIR, "logs"))
             os.makedirs(out_dir, exist_ok=True)
-            _log(f"Export Tablo request: folder={folder}, year={year}, month={month}")
+            _log(f"Export Tablo request: folder={folder}, year={year}, month={month}, out_dir={out_dir}, preset={preset_id}")
+
+            active_cfg, active_preset_name = get_active_pegawai_config(preset_id)
+            active_cfg_path = os.path.join(str(out_dir), "temp_active_pegawai.json")
+            try:
+                with open(active_cfg_path, "w", encoding="utf-8") as f:
+                    json.dump(active_cfg, f, indent=2, ensure_ascii=False)
+            except Exception:
+                active_cfg_path = None
 
             try:
                 from timemark_engine.export_tablo_excel import generate_tablo_workbook
@@ -1894,7 +2040,6 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
                         with open(sch_cand, "r", encoding="utf-8") as f:
                             sched_data = json.load(f)
                     else:
-                        from pathlib import Path
                         photos_dir = os.path.join(BASE_DIR, "03_photos_export")
                         sched_data = build_schedule(
                             pdf_dir=Path(folder).resolve(),
@@ -1905,7 +2050,7 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
                             jam_selesai=18 * 60,
                             tim_max=2
                         )
-                        temp_sch = os.path.join(out_dir, "temp_custom_schedule.json")
+                        temp_sch = os.path.join(str(out_dir), "temp_custom_schedule.json")
                         with open(temp_sch, "w", encoding="utf-8") as f:
                             json.dump(sched_data, f, indent=2, ensure_ascii=False)
             elif export_dir and os.path.isfile(os.path.join(export_dir, "schedule.json")):
@@ -1922,7 +2067,9 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
                 sched_data,
                 year=int(year) if year else None,
                 month=int(month) if month else None,
-                output_path=out_dir
+                output_path=out_dir,
+                config=active_cfg,
+                config_path=Path(active_cfg_path) if active_cfg_path else None
             )
             _log(f"Export Tablo success: {file_path}")
             self._json({"ok": True, "filePath": str(file_path)})
@@ -1942,10 +2089,13 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
             year = data.get("year", datetime.now().year)
             month = data.get("month", datetime.now().month)
             with_personnel = data.get("withPersonnel", True)
+            preset_id = data.get("presetId") or data.get("preset_id")
+            output_dir = data.get("outputDir") or data.get("outDir")
 
-            out_dir = os.path.join(BASE_DIR, "logs")
+            from pathlib import Path
+            out_dir = Path(output_dir) if (output_dir and os.path.isdir(output_dir)) else Path(os.path.join(BASE_DIR, "logs"))
             os.makedirs(out_dir, exist_ok=True)
-            _log(f"Export Dinasan request: folder={folder}, year={year}, month={month}")
+            _log(f"Export Dinasan request: folder={folder}, year={year}, month={month}, out_dir={out_dir}, preset={preset_id}")
 
             try:
                 from timemark_engine.export_dinasan_excel import build_dinasan_workbook, MONTH_NAMES_ID
@@ -1955,11 +2105,15 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
                 from export_dinasan_excel import build_dinasan_workbook, MONTH_NAMES_ID
                 from scheduler import build_schedule, load_mapping, load_data_acuan
 
-            cfg_path = os.path.join(ENGINE_DIR, "daftar_pegawai.json")
-            if not os.path.isfile(cfg_path):
-                cfg_path = os.path.join(BASE_DIR, "config", "daftar_pegawai.json")
+            active_cfg, active_preset_name = get_active_pegawai_config(preset_id)
+            active_cfg_path = os.path.join(str(out_dir), "temp_active_dinasan_cfg.json")
+            try:
+                with open(active_cfg_path, "w", encoding="utf-8") as f:
+                    json.dump(active_cfg, f, indent=2, ensure_ascii=False)
+            except Exception:
+                active_cfg_path = os.path.join(ENGINE_DIR, "daftar_pegawai.json")
 
-            temp_sch = os.path.join(out_dir, "temp_dinasan_schedule.json")
+            temp_sch = os.path.join(str(out_dir), "temp_dinasan_schedule.json")
             if folder:
                 if os.path.isfile(folder) and folder.lower().endswith(".json"):
                     temp_sch = folder
@@ -1968,7 +2122,6 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
                     if os.path.isfile(sch_cand):
                         temp_sch = sch_cand
                     else:
-                        from pathlib import Path
                         m_path = os.path.join(ENGINE_DIR, "asset_waktu_mapping.json")
                         mapping = load_mapping(m_path) if os.path.isfile(m_path) else {}
                         a_path = os.path.join(ENGINE_DIR, "data_acuan_tenaga_gabungan.json")
@@ -1988,19 +2141,18 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
                 temp_sch = os.path.join(export_dir, "schedule.json")
 
             m_name = MONTH_NAMES_ID.get(int(month), f"BULAN_{month}")
-            out_xlsx = os.path.join(out_dir, f"DAFTAR_DINASAN_PEGAWAI_{m_name}_{year}.xlsx")
+            out_xlsx = os.path.join(str(out_dir), f"DAFTAR_DINASAN_PEGAWAI_{m_name}_{year}.xlsx")
 
-            from pathlib import Path
             build_dinasan_workbook(
                 year=int(year),
                 month=int(month),
                 schedule_path=Path(temp_sch),
-                config_path=Path(cfg_path),
+                config_path=Path(active_cfg_path),
                 output_path=Path(out_xlsx),
                 with_personnel=bool(with_personnel)
             )
             _log(f"Export Dinasan success: {out_xlsx}")
-            self._json({"ok": True, "filePath": out_xlsx})
+            self._json({"ok": True, "filePath": str(out_xlsx)})
         except Exception as e:
             _log(f"Export dinasan error: {e}")
             import traceback
@@ -2338,7 +2490,7 @@ def main():
     print("[OK] Opening desktop window...")
 
     webview.create_window(
-        "Sintelis Utility 2.0 (v1.5.5)",
+        "Sintelis Utility 2.0 (v1.5.6)",
         f"http://localhost:{PORT}",
         width=1400,
         height=900,
