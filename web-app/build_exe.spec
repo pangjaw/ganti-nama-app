@@ -7,9 +7,20 @@ sys.setrecursionlimit(5000)
 _cwd = os.getcwd()
 dist_dir = Path(_cwd) / 'dist'
 if not dist_dir.is_dir():
-    raise SystemExit(f'ERROR: Build not found at {dist_dir}. Run npm run build first.')
+# Bersihkan sisa .exe lama di dist jika ada, agar tidak terjadi recursive bundling
+for old_exe in dist_dir.glob('*.exe'):
+    try:
+        old_exe.unlink()
+    except Exception:
+        pass
 
-datas = [(str(dist_dir), 'dist')]
+# Masukkan hanya aset frontend web (html, js, css, svg, json, worker), jangan sertakan binary
+datas = []
+for p in dist_dir.rglob('*'):
+    if p.is_file() and p.suffix.lower() not in ('.exe', '.zip', '.tmp', '.pdb', '.log'):
+        rel_parent = p.relative_to(dist_dir).parent
+        target_folder = 'dist' if str(rel_parent) == '.' else f'dist/{rel_parent.as_posix()}'
+        datas.append((str(p), target_folder))
 
 timemark_dir = Path(_cwd) / 'timemark_engine'
 if timemark_dir.is_dir():
