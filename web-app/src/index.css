@@ -3,26 +3,31 @@
 /* ========================================================================== */
 
 :root {
-  --bg-primary: #0b0d15;
-  --bg-secondary: #131720;
-  --bg-card: #1a1f2e;
-  --bg-card-hover: #22283c;
-  --border-color: #2a3045;
-  --text-primary: #e8edf5;
-  --text-secondary: #8b95b0;
-  --accent: #00d4aa;
-  --accent-dim: rgba(0, 212, 170, 0.15);
-  --danger: #ff5e7d;
-  --warning: #facc15;
-  --transition: 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  --bg-primary: #0B0E14;
+  --bg-secondary: #121826;
+  --bg-card: rgba(18, 24, 38, 0.75);
+  --bg-card-hover: rgba(26, 34, 52, 0.85);
+  --border-color: rgba(255, 255, 255, 0.08);
+  --border-glass: rgba(255, 255, 255, 0.08);
+  --border-glow: rgba(255, 115, 0, 0.4);
+  --text-primary: #F8FAFC;
+  --text-secondary: #94A3B8;
+  --accent: #FF7300;
+  --accent-orange: #FF7300;
+  --accent-orange-hover: #FF8800;
+  --accent-dim: rgba(255, 115, 0, 0.15);
+  --accent-glow: 0 0 16px rgba(255, 115, 0, 0.35);
+  --danger: #FF4D6D;
+  --warning: #FACC15;
+  --transition: 0.22s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
-html { font-size: 15px; }
+html { font-size: 14.5px; }
 
 body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background: var(--bg-primary);
   color: var(--text-primary);
   height: 100vh;
@@ -34,18 +39,166 @@ body {
 #root {
   height: 100vh;
   display: flex;
-  flex-direction: column;
+  flex-direction: row;
+  overflow: hidden;
+  background: var(--bg-primary);
 }
 
-/* ---- Layout: page tidak scroll, 2 kolom ---- */
-.app-container {
-  max-width: 1240px;
-  margin: 0 auto;
-  padding: 0.75rem 1.5rem;
+/* ---- NeuroNest Layout Wrapper ---- */
+.app-layout-wrapper {
+  display: flex;
+  height: 100vh;
+  width: 100vw;
+  overflow: hidden;
+  background: var(--bg-primary);
+}
+
+.app-main-workspace {
   flex: 1;
   display: flex;
   flex-direction: column;
   height: 100vh;
+  overflow: hidden;
+  padding: 0.85rem 1.25rem;
+  min-width: 0;
+  background: radial-gradient(circle at 50% 0%, rgba(255, 115, 0, 0.04) 0%, transparent 55%), var(--bg-primary);
+}
+
+/* ---- Bento Header Grid ---- */
+.bento-header-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.75rem;
+}
+
+.bento-card {
+  background: var(--bg-card);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--border-glass);
+  border-radius: 12px;
+  padding: 0.75rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 20px -2px rgba(0, 0, 0, 0.4);
+}
+
+.bento-card:hover {
+  border-color: rgba(255, 115, 0, 0.35);
+  box-shadow: 0 6px 24px -2px rgba(0, 0, 0, 0.5), 0 0 15px -3px rgba(255, 115, 0, 0.2);
+  transform: translateY(-1px);
+}
+
+.bento-card-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.bento-card-label {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+}
+
+.bento-card-value {
+  font-size: 1.1rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  line-height: 1.2;
+}
+
+.bento-card-sub {
+  font-size: 0.68rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bento-pulse-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+.bento-pulse-dot.ready {
+  background: #10B981;
+  box-shadow: 0 0 8px #10B981;
+}
+
+.bento-pulse-dot.working {
+  background: #FF7300;
+  box-shadow: 0 0 10px #FF7300;
+  animation: pulseWorking 1.2s infinite ease-in-out;
+}
+
+@keyframes pulseWorking {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50% { opacity: 0.5; transform: scale(1.3); }
+}
+
+/* ---- Floating Pill Tabs ---- */
+.floating-pill-container {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: rgba(18, 24, 38, 0.65);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--border-glass);
+  padding: 0.3rem;
+  border-radius: 9999px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+}
+
+.floating-pill-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  padding: 0.45rem 0.9rem;
+  border-radius: 9999px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  white-space: nowrap;
+}
+
+.floating-pill-btn:hover {
+  color: #FFFFFF;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.floating-pill-btn.active {
+  background: linear-gradient(135deg, #FF7300 0%, #E05300 100%);
+  color: #FFFFFF;
+  box-shadow: 0 2px 12px rgba(255, 115, 0, 0.4);
+}
+
+/* ---- Sidebar button hover ---- */
+.sidebar-nav-btn:hover {
+  background: rgba(255, 255, 255, 0.04) !important;
+  color: #FFFFFF !important;
+}
+
+/* ---- Layout Legacy App-Container Support ---- */
+.app-container {
+  max-width: 100%;
+  margin: 0;
+  padding: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
   overflow: hidden;
 }
 

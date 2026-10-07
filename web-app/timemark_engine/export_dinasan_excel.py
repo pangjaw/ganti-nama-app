@@ -322,7 +322,7 @@ def build_dinasan_workbook(year: int, month: int, schedule_path: Path, config_pa
     if not pdf_by_date:
         src_dir = Path("01_pdf_source")
         if src_dir.exists():
-            for pdf_file in src_dir.glob("*.pdf"):
+            for pdf_file in src_dir.rglob("*.pdf"):
                 m = re.search(r'(\d{2})-(\d{2})-(\d{4})', pdf_file.name)
                 if m:
                     pdf_by_date.setdefault(m.group(0), []).append(pdf_file)
@@ -743,6 +743,7 @@ def build_dinasan_workbook(year: int, month: int, schedule_path: Path, config_pa
 def main():
     parser = argparse.ArgumentParser(description="Export KAI Daftar Dinasan Pegawai to Excel")
     parser.add_argument("--month", type=str, default=None, help="Month in YYYY-MM format, e.g. 2026-08")
+    parser.add_argument("--folder", type=str, default=None, help="Folder PDF kustom untuk diekstrak jadwalnya")
     parser.add_argument("--schedule", type=str, default="schedule.json", help="Path to schedule.json")
     parser.add_argument("--config", type=str, default="config/daftar_pegawai.json", help="Path to daftar_pegawai.json")
     parser.add_argument("--output", type=str, default=None, help="Output path for .xlsx")
@@ -751,6 +752,47 @@ def main():
 
     sch_path = Path(args.schedule)
     cfg_path = Path(args.config)
+    if not cfg_path.exists():
+        cand_cfg = Path(__file__).resolve().parent / "daftar_pegawai.json"
+        if cand_cfg.exists():
+            cfg_path = cand_cfg
+
+    if args.folder and Path(args.folder).exists():
+        custom_pdf_dir = Path(args.folder).resolve()
+        temp_sch = Path(args.output).parent / "temp_dinasan_schedule.json" if args.output else Path("logs/temp_dinasan_schedule.json")
+        temp_sch.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            from scheduler import build_schedule, load_mapping, load_data_acuan
+        except ImportError:
+            sys.path.insert(0, str(Path(__file__).resolve().parent))
+            from scheduler import build_schedule, load_mapping, load_data_acuan
+
+        engine_dir = Path(__file__).resolve().parent
+        m_path = engine_dir / "asset_waktu_mapping.json"
+        if not m_path.exists() and (Path("config") / "asset_waktu_mapping.json").exists():
+            m_path = Path("config") / "asset_waktu_mapping.json"
+        mapping = load_mapping(m_path) if m_path.exists() else {}
+
+        a_path = engine_dir / "data_acuan_tenaga_gabungan.json"
+        if not a_path.exists() and (Path("config") / "data_acuan_tenaga_gabungan.json").exists():
+            a_path = Path("config") / "data_acuan_tenaga_gabungan.json"
+        acuan = load_data_acuan(a_path) if a_path.exists() else {}
+
+        sched_data = build_schedule(
+            pdf_dir=custom_pdf_dir,
+            photos_dir=Path("./03_photos_export").resolve(),
+            mapping=mapping,
+            acuan=acuan,
+            jam_mulai=7 * 60,
+            jam_selesai=18 * 60,
+            tim_max=2
+        )
+        try:
+            with open(temp_sch, "w", encoding="utf-8") as f:
+                json.dump(sched_data, f, indent=2, ensure_ascii=False)
+        except Exception:
+            pass
+        sch_path = temp_sch
 
     # Determine year & month
     year = None

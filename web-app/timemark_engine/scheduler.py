@@ -214,6 +214,10 @@ def _process_pdf_pass1(pdf_path: Path, mapping: dict, acuan: dict, k_map: dict, 
 
     if not category:
         category = detect_category_from_filename(pdf_path.name)
+    if not category and pdf_path.parent.name:
+        category = detect_category_from_filename(pdf_path.parent.name)
+    if not category and pdf_path.parent.parent.name:
+        category = detect_category_from_filename(pdf_path.parent.parent.name)
 
     if not pdf_date and page1_text:
         pdf_date = parse_date_indonesian(page1_text)
@@ -232,8 +236,16 @@ def _process_pdf_pass1(pdf_path: Path, mapping: dict, acuan: dict, k_map: dict, 
     asset_items = []
 
     if is_multi and all_funclocs:
+        target_funclocs = all_funclocs
+        # If the file specifically targets one asset (e.g. PERAWATAN WESEL W21A BOO ...),
+        # only match that asset if it exists in all_funclocs!
+        if identifier:
+            matched = [fl for fl in all_funclocs if extract_identifier(fl, category) == identifier]
+            if matched:
+                target_funclocs = matched
+
         seen = set()
-        for funcloc_line in all_funclocs:
+        for funcloc_line in target_funclocs:
             ident = extract_identifier(funcloc_line, category)
             if ident and ident not in seen:
                 seen.add(ident)
@@ -450,13 +462,20 @@ def main() -> int:
     pdf_dir = Path(args.pdf_dir).resolve()
     photos_dir = Path(args.photos_dir).resolve()
 
+    engine_dir = Path(__file__).resolve().parent
     mapping_path = Path(args.mapping)
-    if not mapping_path.exists() and (Path("config") / args.mapping).exists():
-        mapping_path = Path("config") / args.mapping
+    if not mapping_path.exists():
+        if (Path("config") / args.mapping).exists():
+            mapping_path = Path("config") / args.mapping
+        elif (engine_dir / args.mapping).exists():
+            mapping_path = engine_dir / args.mapping
 
     data_acuan_path = Path(args.data_acuan)
-    if not data_acuan_path.exists() and (Path("config") / args.data_acuan).exists():
-        data_acuan_path = Path("config") / args.data_acuan
+    if not data_acuan_path.exists():
+        if (Path("config") / args.data_acuan).exists():
+            data_acuan_path = Path("config") / args.data_acuan
+        elif (engine_dir / args.data_acuan).exists():
+            data_acuan_path = engine_dir / args.data_acuan
 
     mapping = {}
     acuan = {}

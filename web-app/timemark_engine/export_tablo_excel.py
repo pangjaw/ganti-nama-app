@@ -384,7 +384,7 @@ def generate_tablo_workbook(schedule_data: dict, year: int = None, month: int = 
     pdf_by_date = {}
     for search_dir in [Path("01_pdf_source"), Path("02_pdf_target")]:
         if search_dir.exists():
-            for pdf_file in search_dir.glob("*.pdf"):
+            for pdf_file in search_dir.rglob("*.pdf"):
                 m = re.search(r'(\d{2})-(\d{2})-(\d{4})', pdf_file.name)
                 if m:
                     d_str = m.group(0)
@@ -943,23 +943,39 @@ def main():
         temp_sched_file = APP_DIR / "logs" / "temp_custom_schedule.json"
         temp_sched_file.parent.mkdir(parents=True, exist_ok=True)
 
-        print(f"⚡ [TABLO MODE 2] Menjalankan scheduler.py pada folder: {custom_pdf_dir}...")
-        py_scheduler = Path(__file__).resolve().parent / "scheduler.py"
-        if not py_scheduler.exists():
-            py_scheduler = APP_DIR / "scripts" / "scheduler.py"
-        sched_res = subprocess.run([
-            sys.executable, "--run-script", str(py_scheduler),
-            "--pdf-dir", str(custom_pdf_dir),
-            "--output", str(temp_sched_file)
-        ], capture_output=True, text=True, cwd=str(APP_DIR),
-        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000))
+        print(f"⚡ [TABLO MODE 2] Mengekstrak jadwal langsung dari folder: {custom_pdf_dir}...")
+        try:
+            from scheduler import build_schedule, load_mapping, load_data_acuan
+        except ImportError:
+            sys.path.insert(0, str(Path(__file__).resolve().parent))
+            from scheduler import build_schedule, load_mapping, load_data_acuan
 
-        if sched_res.returncode != 0 or not temp_sched_file.exists():
-            print(f"[ERROR] scheduler.py gagal memproses folder kustom: {sched_res.stderr}", file=sys.stderr)
-            return 1
+        engine_dir = Path(__file__).resolve().parent
+        m_path = engine_dir / "asset_waktu_mapping.json"
+        if not m_path.exists() and (APP_DIR / "config" / "asset_waktu_mapping.json").exists():
+            m_path = APP_DIR / "config" / "asset_waktu_mapping.json"
+        mapping = load_mapping(m_path) if m_path.exists() else {}
 
-        with open(temp_sched_file, "r", encoding="utf-8") as f:
-            sched_data = json.load(f)
+        a_path = engine_dir / "data_acuan_tenaga_gabungan.json"
+        if not a_path.exists() and (APP_DIR / "config" / "data_acuan_tenaga_gabungan.json").exists():
+            a_path = APP_DIR / "config" / "data_acuan_tenaga_gabungan.json"
+        acuan = load_data_acuan(a_path) if a_path.exists() else {}
+
+        photos_dir = APP_DIR / "03_photos_export"
+        sched_data = build_schedule(
+            pdf_dir=custom_pdf_dir,
+            photos_dir=photos_dir,
+            mapping=mapping,
+            acuan=acuan,
+            jam_mulai=7 * 60,
+            jam_selesai=18 * 60,
+            tim_max=2
+        )
+        try:
+            with open(temp_sched_file, "w", encoding="utf-8") as f:
+                json.dump(sched_data, f, indent=2, ensure_ascii=False)
+        except Exception:
+            pass
     else:
         # Mode pipeline
         sched_file = Path(args.schedule).resolve()

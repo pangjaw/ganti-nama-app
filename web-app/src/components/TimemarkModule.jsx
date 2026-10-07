@@ -164,8 +164,8 @@ export default function TimemarkModule() {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: '1rem', overflow: 'hidden' }}>
       
-      {/* 5 Sub-Tabs Navigation Bar (Anti-Slop Design) */}
-      <div style={{ display: 'flex', gap: '0.35rem', background: 'var(--bg-secondary)', padding: '0.35rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+      {/* 5 Floating Pill Sub-Tabs Navigation Bar */}
+      <div className="floating-pill-container">
         {[
           { id: 'pipeline', label: '🚀 Pipeline Proses' },
           { id: 'gallery', label: '🖼️ Galeri & Edit Foto' },
@@ -175,19 +175,9 @@ export default function TimemarkModule() {
         ].map(tab => (
           <button
             key={tab.id}
+            type="button"
+            className={`floating-pill-btn ${activeSubTab === tab.id ? 'active' : ''}`}
             onClick={() => setActiveSubTab(tab.id)}
-            style={{
-              flex: 1,
-              padding: '0.55rem 0.75rem',
-              background: activeSubTab === tab.id ? 'var(--bg-card)' : 'transparent',
-              color: activeSubTab === tab.id ? 'var(--text-primary)' : 'var(--text-secondary)',
-              border: activeSubTab === tab.id ? '1px solid var(--border-color)' : '1px solid transparent',
-              borderRadius: '6px',
-              cursor: 'pointer',
-              fontWeight: activeSubTab === tab.id ? 600 : 500,
-              fontSize: '0.85rem',
-              transition: 'all 0.15s ease'
-            }}
           >
             {tab.label}
           </button>

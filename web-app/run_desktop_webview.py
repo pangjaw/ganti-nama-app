@@ -1864,12 +1864,10 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
             out_dir = os.path.join(BASE_DIR, "logs")
             os.makedirs(out_dir, exist_ok=True)
 
-            cmd = [
-                sys.executable,
-                "--run-script",
-                os.path.join(ENGINE_DIR, "export_tablo_excel.py"),
-                "--output-dir", out_dir
-            ]
+            is_frozen = getattr(sys, "frozen", False)
+            script_path = os.path.join(ENGINE_DIR, "export_tablo_excel.py")
+            cmd = [sys.executable, "--run-script", script_path] if is_frozen else [sys.executable, script_path]
+            cmd.extend(["--output-dir", out_dir])
             if year:
                 cmd.extend(["--year", str(year)])
             if month:
@@ -1932,50 +1930,31 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
             os.makedirs(out_dir, exist_ok=True)
             month_str = f"{year}-{int(month):02d}"
 
-            sch_path = None
-            if folder:
-                if os.path.isfile(folder) and folder.lower().endswith(".json"):
-                    sch_path = folder
-                elif os.path.isfile(folder):
-                    folder_dir = os.path.dirname(folder)
-                    temp_sch = os.path.join(out_dir, "temp_dinasan_schedule.json")
-                    subprocess.run([
-                        sys.executable, "--run-script", os.path.join(ENGINE_DIR, "scheduler.py"),
-                        "--pdf-dir", folder_dir,
-                        "--output", temp_sch
-                    ], capture_output=True, text=True, cwd=BASE_DIR,
-                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000))
-                    if os.path.isfile(temp_sch):
-                        sch_path = temp_sch
-                elif os.path.isdir(folder):
-                    if os.path.isfile(os.path.join(folder, "schedule.json")):
-                        sch_path = os.path.join(folder, "schedule.json")
-                    else:
-                        temp_sch = os.path.join(out_dir, "temp_dinasan_schedule.json")
-                        subprocess.run([
-                            sys.executable, "--run-script", os.path.join(ENGINE_DIR, "scheduler.py"),
-                            "--pdf-dir", folder,
-                            "--output", temp_sch
-                        ], capture_output=True, text=True, cwd=BASE_DIR,
-                        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000))
-                        if os.path.isfile(temp_sch):
-                            sch_path = temp_sch
-            elif export_dir and os.path.isfile(os.path.join(export_dir, "schedule.json")):
-                sch_path = os.path.join(export_dir, "schedule.json")
-
-            if not sch_path:
-                sch_path = os.path.join(out_dir, "temp_dinasan_schedule.json")
-
-            cmd = [
-                sys.executable,
-                "--run-script",
-                os.path.join(ENGINE_DIR, "export_dinasan_excel.py"),
+            is_frozen = getattr(sys, "frozen", False)
+            script_path = os.path.join(ENGINE_DIR, "export_dinasan_excel.py")
+            cmd = [sys.executable, "--run-script", script_path] if is_frozen else [sys.executable, script_path]
+            cmd.extend([
                 "--month", month_str,
-                "--schedule", sch_path,
                 "--config", os.path.join(ENGINE_DIR, "daftar_pegawai.json")
-            ]
+            ])
             if with_personnel:
                 cmd.append("--with-personnel")
+
+            if folder:
+                if os.path.isfile(folder):
+                    if folder.lower().endswith(".json"):
+                        cmd.extend(["--schedule", folder])
+                    else:
+                        cmd.extend(["--folder", os.path.dirname(folder)])
+                elif os.path.isdir(folder):
+                    if os.path.isfile(os.path.join(folder, "schedule.json")):
+                        cmd.extend(["--schedule", os.path.join(folder, "schedule.json")])
+                    else:
+                        cmd.extend(["--folder", folder])
+            elif export_dir and os.path.isfile(os.path.join(export_dir, "schedule.json")):
+                cmd.extend(["--schedule", os.path.join(export_dir, "schedule.json")])
+            else:
+                cmd.extend(["--schedule", os.path.join(out_dir, "temp_dinasan_schedule.json")])
 
             res = subprocess.run(
                 cmd,
@@ -2336,7 +2315,7 @@ def main():
     print("[OK] Opening desktop window...")
 
     webview.create_window(
-        "Sintelis Utility 2.0 (v1.5.3)",
+        "Sintelis Utility 2.0 (v1.5.4)",
         f"http://localhost:{PORT}",
         width=1400,
         height=900,

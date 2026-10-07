@@ -12,10 +12,13 @@ import AssetAuditPanel from './components/AssetAuditPanel';
 import TimemarkModule from './components/TimemarkModule';
 import UpdateBanner from './components/UpdateBanner';
 import UpdateModal from './components/UpdateModal';
+import Sidebar from './components/Sidebar';
+import BentoHeader from './components/BentoHeader';
 import * as XLSX from 'xlsx';
 
 export default function App() {
   const [mainTab, setMainTab] = useState('ocr'); // 'ocr' | 'downloader' | 'timemark'
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [files, setFiles] = useState([]);
   const [processing, setProcessing] = useState(false);
@@ -662,62 +665,35 @@ export default function App() {
   }, [addLog]);
 
   return (
-    <div className="app-container">
-      <header className="app-header">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-          <div>
-            <h1>Sintelis Utility 2.0</h1>
-            <p>Aplikasi OCR Renamer, Downloader Rekap & Edit Foto Ceklis P3-STE</p>
-          </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-            <UpdateBanner
-              onOpenModal={() => setShowUpdateModal(true)}
-              onAutoOpen={() => setShowUpdateModal(true)}
-            />
-            <button
-              type="button"
-              onClick={() => setShowUpdateModal(true)}
-              style={{
-                padding: '0.4rem 0.8rem',
-                background: 'var(--bg-secondary)',
-                border: '1px solid var(--border-color)',
-                borderRadius: '6px',
-                color: 'var(--text-secondary)',
-                fontSize: '0.8rem',
-                fontWeight: 500,
-                cursor: 'pointer',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '0.35rem'
-              }}
-              title="Periksa pembaruan versi aplikasi secara manual"
-            >
-              <span>🔄</span> Cek Pembaruan
-            </button>
-          </div>
+    <div className="app-layout-wrapper">
+      {/* ── Collapsible Left Sidebar (NeuroNest Style) ── */}
+      <Sidebar
+        mainTab={mainTab}
+        setMainTab={setMainTab}
+        isCollapsed={isSidebarCollapsed}
+        setIsCollapsed={setIsSidebarCollapsed}
+        onOpenUpdateModal={() => setShowUpdateModal(true)}
+        appVersion="v1.5.4"
+      />
+
+      {/* ── Main Workspace ── */}
+      <main className="app-main-workspace">
+        {/* Bento Stats & Workspace Title Header */}
+        <BentoHeader
+          engineStatus={processing ? 'Memproses Data...' : paused ? 'Dijeda' : 'Siap Digunakan'}
+          activePreset={instansi}
+          filesCount={files.length}
+          currentVersion="v1.5.4"
+          mainTab={mainTab}
+        />
+
+        {/* Hidden UpdateBanner for automated background check */}
+        <div style={{ display: 'none' }}>
+          <UpdateBanner
+            onOpenModal={() => setShowUpdateModal(true)}
+            onAutoOpen={() => setShowUpdateModal(true)}
+          />
         </div>
-        
-        <nav className="main-nav-bar">
-          <button
-            className={`nav-tab-btn ${mainTab === 'ocr' ? 'active' : ''}`}
-            onClick={() => setMainTab('ocr')}
-          >
-            📄 Menu 1: OCR & Rename PDF
-          </button>
-          <button
-            className={`nav-tab-btn ${mainTab === 'downloader' ? 'active' : ''}`}
-            onClick={() => setMainTab('downloader')}
-          >
-            📥 Menu 2: Downloader Rekap P3-STE
-          </button>
-          <button
-            className={`nav-tab-btn ${mainTab === 'timemark' ? 'active' : ''}`}
-            onClick={() => setMainTab('timemark')}
-          >
-            📸 Menu 3: Edit Foto Ceklis P3-STE
-          </button>
-        </nav>
-      </header>
 
       {/* Timemark Tab View (Persisted in DOM) */}
       <div style={{ display: mainTab === 'timemark' ? 'flex' : 'none', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
@@ -979,12 +955,9 @@ export default function App() {
           </div>
         </div>
       </div>
+    </main>
 
-      <footer className="app-footer">
-        Sintelis Utility 2.0 — Client-Side (PDF.js + Tesseract.js) & P3-STE Downloader Engine
-      </footer>
-
-      <UpdateModal isOpen={showUpdateModal} onClose={() => setShowUpdateModal(false)} />
+    <UpdateModal isOpen={showUpdateModal} onClose={() => setShowUpdateModal(false)} />
     </div>
   );
 }
