@@ -948,10 +948,11 @@ def main():
         if not py_scheduler.exists():
             py_scheduler = APP_DIR / "scripts" / "scheduler.py"
         sched_res = subprocess.run([
-            sys.executable, str(py_scheduler),
+            sys.executable, "--run-script", str(py_scheduler),
             "--pdf-dir", str(custom_pdf_dir),
             "--output", str(temp_sched_file)
-        ], capture_output=True, text=True, cwd=str(APP_DIR))
+        ], capture_output=True, text=True, cwd=str(APP_DIR),
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000))
 
         if sched_res.returncode != 0 or not temp_sched_file.exists():
             print(f"[ERROR] scheduler.py gagal memproses folder kustom: {sched_res.stderr}", file=sys.stderr)

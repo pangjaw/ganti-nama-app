@@ -38,14 +38,14 @@ def run_step4_auto(rel_path: str, mode: str, detector: str = "google_vision"):
 
     if mode == "jam":
         script = APP_DIR / "scripts" / "edit_photo_time_only.py"
-        cmd = [sys.executable, str(script), "--input", norm_rel]
+        cmd = [sys.executable, "--run-script", str(script), "--input", norm_rel]
     elif mode == "koordinat":
         script = APP_DIR / "scripts" / "edit_photo_coordinate_only.py"
-        cmd = [sys.executable, str(script), "--input", norm_rel]
+        cmd = [sys.executable, "--run-script", str(script), "--input", norm_rel]
     else:
         # Default: mode tanggal (edit_timemark_ide1.py)
         script = APP_DIR / "scripts" / "edit_timemark_ide1.py"
-        cmd = [sys.executable, str(script), "--input", str(folder_abs)]
+        cmd = [sys.executable, "--run-script", str(script), "--input", str(folder_abs)]
         if detector == "google_vision":
             cmd.extend(["--detector", "google_vision"])
         elif detector == "guide":
@@ -53,7 +53,10 @@ def run_step4_auto(rel_path: str, mode: str, detector: str = "google_vision"):
         if SCHEDULE_PATH.exists():
             cmd.extend(["--schedule", str(SCHEDULE_PATH)])
 
-    res = subprocess.run(cmd, cwd=str(APP_DIR), capture_output=True, text=True)
+    res = subprocess.run(
+        cmd, cwd=str(APP_DIR), capture_output=True, text=True,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+    )
     return res.returncode == 0, res.stdout, res.stderr
 
 
