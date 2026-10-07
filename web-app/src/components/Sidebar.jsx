@@ -6,7 +6,7 @@ export default function Sidebar({
   isCollapsed,
   setIsCollapsed,
   onOpenUpdateModal,
-  appVersion = 'v1.5.6',
+  appVersion = 'v1.5.7',
   updateAvailable = false
 }) {
   const menuItems = [

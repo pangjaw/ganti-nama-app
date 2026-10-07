@@ -103,6 +103,64 @@ APP_DATA_DIR = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~
 os.makedirs(APP_DATA_DIR, exist_ok=True)
 ACCOUNTS_FILE = os.path.join(APP_DATA_DIR, "p3ste_accounts.json")
 
+
+def _init_persistent_storage():
+    """
+    Memastikan direktori APP_DATA_DIR (%LOCALAPPDATA%\\SintelisUtility)
+    memiliki data awal employee_presets.json dan daftar_pegawai.json.
+    Jika belum ada (instalasi baru atau update pertama kali),
+    salin template dari ENGINE_DIR atau BASE_DIR/config.
+    JANGAN TIMPA jika berkas sudah ada di APP_DATA_DIR.
+    """
+    try:
+        os.makedirs(APP_DATA_DIR, exist_ok=True)
+        user_presets = os.path.join(APP_DATA_DIR, "employee_presets.json")
+        if not os.path.isfile(user_presets) or os.path.getsize(user_presets) < 10:
+            for candidate in [
+                os.path.join(ENGINE_DIR, "employee_presets.json"),
+                os.path.join(BASE_DIR, "config", "employee_presets.json"),
+            ]:
+                if os.path.isfile(candidate) and os.path.getsize(candidate) > 10:
+                    shutil.copy2(candidate, user_presets)
+                    _log(f"Initialized persistent employee_presets.json from: {candidate}")
+                    break
+
+        user_pegawai = os.path.join(APP_DATA_DIR, "daftar_pegawai.json")
+        if not os.path.isfile(user_pegawai) or os.path.getsize(user_pegawai) < 10:
+            for candidate in [
+                os.path.join(ENGINE_DIR, "daftar_pegawai.json"),
+                os.path.join(BASE_DIR, "config", "daftar_pegawai.json"),
+            ]:
+                if os.path.isfile(candidate) and os.path.getsize(candidate) > 10:
+                    shutil.copy2(candidate, user_pegawai)
+                    _log(f"Initialized persistent daftar_pegawai.json from: {candidate}")
+                    break
+    except Exception as e:
+        _log(f"Persistent storage init notice: {e}")
+
+
+_init_persistent_storage()
+
+
+def _atomic_write_json(file_path, data):
+    """Menulis data JSON secara atomik menggunakan berkas temporer untuk mencegah korupsi data."""
+    try:
+        os.makedirs(os.path.dirname(os.path.abspath(file_path)), exist_ok=True)
+        tmp_path = f"{file_path}.tmp.{os.getpid()}"
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        os.replace(tmp_path, file_path)
+        return True
+    except Exception as e:
+        _log(f"Atomic write error for {file_path}: {e}")
+        try:
+            with open(file_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, indent=2, ensure_ascii=False)
+            return True
+        except Exception:
+            return False
+
+
 _selected_folder = None
 _was_minimized = False
 
@@ -1289,18 +1347,86 @@ def _pick_file_native():
     return None
 
 
+def _pick_json_file_native(title="Pilih Berkas Cadangan Preset (*.json)"):
+    """Buka dialog pemilihan berkas JSON cadangan di Windows."""
+    # 1. Tkinter (Topmost)
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        fpath = filedialog.askopenfilename(
+            title=title,
+            filetypes=[("JSON Files", "*.json"), ("Semua Berkas", "*.*")]
+        )
+        root.destroy()
+        if fpath and os.path.isfile(fpath):
+            return os.path.normpath(fpath)
+    except Exception as e:
+        _log(f"Tkinter JSON picker notice: {e}")
+
+    # 2. pywebview file dialog
+    try:
+        if getattr(webview, 'windows', None) and len(webview.windows) > 0:
+            dialog_type = getattr(webview.FileDialog, 'OPEN', getattr(webview, 'OPEN_DIALOG', 10))
+            result = webview.windows[0].create_file_dialog(
+                dialog_type,
+                file_types=("JSON Files (*.json)", "Semua Berkas (*.*)")
+            )
+            if result and len(result) > 0 and result[0]:
+                return os.path.normpath(result[0])
+    except Exception as e:
+        _log(f"WebView JSON dialog notice: {e}")
+
+    # 3. PowerShell WinForms OpenFileDialog fallback
+    try:
+        ps_cmd = [
+            "powershell.exe",
+            "-NoProfile",
+            "-Sta",
+            "-Command",
+            f"Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.OpenFileDialog; $f.Title = '{title}'; $f.Filter = 'JSON Files (*.json)|*.json|All files (*.*)|*.*'; if($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK){{ [Console]::Out.Write($f.FileName) }}"
+        ]
+        res = subprocess.run(
+            ps_cmd,
+            capture_output=True,
+            text=True,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+        )
+        path = res.stdout.strip()
+        if path and os.path.isfile(path):
+            return os.path.normpath(path)
+    except Exception as ps_err:
+        _log(f"PowerShell JSON open dialog notice: {ps_err}")
+
+    return None
+
+
 def _save_file_dialog_native(default_name):
     """Opens a native Windows Save As file dialog."""
+    ext = os.path.splitext(default_name)[1].lower()
+    if ext == ".xlsx":
+        webview_types = ('Excel Files (*.xlsx)', 'All files (*.*)')
+        tk_types = [("Excel Files", "*.xlsx"), ("All Files", "*.*")]
+        ps_filter = 'Excel Files (*.xlsx)|*.xlsx|All files (*.*)|*.*'
+    elif ext == ".json":
+        webview_types = ('JSON Files (*.json)', 'All files (*.*)')
+        tk_types = [("JSON Files", "*.json"), ("All Files", "*.*")]
+        ps_filter = 'JSON Files (*.json)|*.json|All files (*.*)|*.*'
+    else:
+        webview_types = ('All files (*.*)',)
+        tk_types = [("All Files", "*.*")]
+        ps_filter = 'All files (*.*)|*.*'
+
     # 1. Coba via pywebview jika window aktif (Native Windows FileDialog)
     try:
         if getattr(webview, 'windows', None) and len(webview.windows) > 0:
             dialog_type = getattr(webview.FileDialog, 'SAVE', getattr(webview, 'SAVE_DIALOG', 30))
-            ext = os.path.splitext(default_name)[1]
-            file_types = ('Excel Files (*.xlsx)', 'All files (*.*)') if ext == '.xlsx' else ('All files (*.*)',)
             result = webview.windows[0].create_file_dialog(
                 dialog_type,
                 save_filename=default_name,
-                file_types=file_types
+                file_types=webview_types
             )
             if result:
                 if isinstance(result, (list, tuple)) and len(result) > 0:
@@ -1318,11 +1444,9 @@ def _save_file_dialog_native(default_name):
         root = tk.Tk()
         root.withdraw()
         root.attributes("-topmost", True)
-        ext = os.path.splitext(default_name)[1]
-        filetypes = [("Excel Files", "*.xlsx"), ("All Files", "*.*")] if ext == ".xlsx" else [("All Files", "*.*")]
         path = filedialog.asksaveasfilename(
             initialfile=default_name,
-            filetypes=filetypes,
+            filetypes=tk_types,
             defaultextension=ext
         )
         root.destroy()
@@ -1333,13 +1457,12 @@ def _save_file_dialog_native(default_name):
 
     # 3. Fallback via PowerShell WinForms
     try:
-        ext = os.path.splitext(default_name)[1]
         ps_cmd = [
             "powershell.exe",
             "-NoProfile",
             "-Sta",
             "-Command",
-            f"Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.SaveFileDialog; $f.FileName = '{default_name}'; $f.Filter = 'Files (*{ext})|*{ext}|All files (*.*)|*.*'; if($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK){{ [Console]::Out.Write($f.FileName) }}"
+            f"Add-Type -AssemblyName System.Windows.Forms; $f = New-Object System.Windows.Forms.SaveFileDialog; $f.FileName = '{default_name}'; $f.Filter = '{ps_filter}'; if($f.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK){{ [Console]::Out.Write($f.FileName) }}"
         ]
         res = subprocess.run(
             ps_cmd,
@@ -1540,6 +1663,10 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
             self._handle_timemark_pegawai_post()
         elif parsed.path == "/api/timemark/set-active-preset":
             self._handle_timemark_set_active_preset()
+        elif parsed.path == "/api/timemark/export-presets":
+            self._handle_timemark_export_presets()
+        elif parsed.path == "/api/timemark/import-presets":
+            self._handle_timemark_import_presets()
         elif parsed.path == "/api/timemark/koreksi-serat-optik":
             self._handle_timemark_koreksi_serat_optik()
         elif parsed.path == "/api/timemark/audit-personil":
@@ -1721,23 +1848,21 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
             p_data["active_preset_id"] = preset_id
             selected_preset = next((p for p in p_data.get("presets", []) if p.get("id") == preset_id), None)
 
-            target_dirs = [APP_DATA_DIR, ENGINE_DIR]
-            for td in target_dirs:
-                try:
-                    os.makedirs(td, exist_ok=True)
-                    with open(os.path.join(td, "employee_presets.json"), "w", encoding="utf-8") as f:
-                        json.dump(p_data, f, indent=2, ensure_ascii=False)
-                except Exception:
-                    pass
+            # 1. Simpan permanen ke APP_DATA_DIR (Prioritas Utama)
+            _atomic_write_json(os.path.join(APP_DATA_DIR, "employee_presets.json"), p_data)
+
+            # Sinkronkan cadangan ke ENGINE_DIR jika memungkinkan
+            try:
+                _atomic_write_json(os.path.join(ENGINE_DIR, "employee_presets.json"), p_data)
+            except Exception:
+                pass
 
             if selected_preset and selected_preset.get("data"):
-                for td in target_dirs:
-                    try:
-                        os.makedirs(td, exist_ok=True)
-                        with open(os.path.join(td, "daftar_pegawai.json"), "w", encoding="utf-8") as f:
-                            json.dump(selected_preset["data"], f, indent=2, ensure_ascii=False)
-                    except Exception:
-                        pass
+                _atomic_write_json(os.path.join(APP_DATA_DIR, "daftar_pegawai.json"), selected_preset["data"])
+                try:
+                    _atomic_write_json(os.path.join(ENGINE_DIR, "daftar_pegawai.json"), selected_preset["data"])
+                except Exception:
+                    pass
 
             _log(f"Active preset changed to: {preset_id} ({selected_preset.get('name') if selected_preset else ''})")
             self._json({
@@ -1756,16 +1881,12 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
             body = self.rfile.read(length)
             data = json.loads(body) if body else {}
 
-            target_dirs = [APP_DATA_DIR, ENGINE_DIR]
             if "daftar_pegawai" in data:
-                for td in target_dirs:
-                    try:
-                        os.makedirs(td, exist_ok=True)
-                        pf = os.path.join(td, "daftar_pegawai.json")
-                        with open(pf, "w", encoding="utf-8") as f:
-                            json.dump(data["daftar_pegawai"], f, indent=2, ensure_ascii=False)
-                    except Exception:
-                        pass
+                _atomic_write_json(os.path.join(APP_DATA_DIR, "daftar_pegawai.json"), data["daftar_pegawai"])
+                try:
+                    _atomic_write_json(os.path.join(ENGINE_DIR, "daftar_pegawai.json"), data["daftar_pegawai"])
+                except Exception:
+                    pass
 
             if "presets" in data or "active_preset_id" in data:
                 presets_file = os.path.join(APP_DATA_DIR, "employee_presets.json")
@@ -1782,18 +1903,94 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
                     existing_presets["presets"] = data["presets"]
                 if "active_preset_id" in data:
                     existing_presets["active_preset_id"] = data["active_preset_id"]
-                for td in target_dirs:
-                    try:
-                        os.makedirs(td, exist_ok=True)
-                        pf = os.path.join(td, "employee_presets.json")
-                        with open(pf, "w", encoding="utf-8") as f:
-                            json.dump(existing_presets, f, indent=2, ensure_ascii=False)
-                    except Exception:
-                        pass
 
-            self._json({"ok": True, "message": "Profil pegawai berhasil disimpan."})
+                _atomic_write_json(os.path.join(APP_DATA_DIR, "employee_presets.json"), existing_presets)
+                try:
+                    _atomic_write_json(os.path.join(ENGINE_DIR, "employee_presets.json"), existing_presets)
+                except Exception:
+                    pass
+
+            self._json({"ok": True, "message": "Profil pegawai berhasil disimpan secara permanen."})
         except Exception as e:
             _log(f"Save pegawai error: {e}")
+            self._json({"ok": False, "error": str(e)}, 500)
+
+    def _handle_timemark_export_presets(self):
+        try:
+            presets_file = os.path.join(APP_DATA_DIR, "employee_presets.json")
+            if not os.path.isfile(presets_file):
+                presets_file = os.path.join(ENGINE_DIR, "employee_presets.json")
+
+            if not os.path.isfile(presets_file):
+                self._json({"ok": False, "error": "Berkas preset belum tersedia untuk diekspor."}, 404)
+                return
+
+            default_name = f"backup_preset_pegawai_{time.strftime('%Y%m%d_%H%M%S')}.json"
+            chosen_path = _save_file_dialog_native(default_name)
+            if not chosen_path:
+                self._json({"ok": False, "cancelled": True})
+                return
+
+            shutil.copy2(presets_file, chosen_path)
+            _log(f"Presets exported successfully to: {chosen_path}")
+            self._json({
+                "ok": True,
+                "message": f"Cadangan preset berhasil disimpan ke: {os.path.basename(chosen_path)}",
+                "path": chosen_path
+            })
+        except Exception as e:
+            _log(f"Export presets error: {e}")
+            self._json({"ok": False, "error": str(e)}, 500)
+
+    def _handle_timemark_import_presets(self):
+        try:
+            chosen_path = _pick_json_file_native("Pilih Berkas Cadangan Preset Pegawai (*.json)")
+            if not chosen_path or not os.path.isfile(chosen_path):
+                self._json({"ok": False, "cancelled": True})
+                return
+
+            with open(chosen_path, "r", encoding="utf-8") as f:
+                imported_data = json.load(f)
+
+            if not isinstance(imported_data, dict):
+                self._json({"ok": False, "error": "Format berkas JSON tidak valid (harus objek JSON)."}, 400)
+                return
+
+            if "presets" not in imported_data or not isinstance(imported_data["presets"], list):
+                self._json({"ok": False, "error": "Berkas JSON tidak memiliki daftar 'presets' yang valid."}, 400)
+                return
+
+            # Simpan permanen ke APP_DATA_DIR
+            target_file = os.path.join(APP_DATA_DIR, "employee_presets.json")
+            _atomic_write_json(target_file, imported_data)
+
+            # Sinkronkan juga active_preset ke daftar_pegawai.json
+            active_id = imported_data.get("active_preset_id")
+            active_preset = None
+            if active_id:
+                active_preset = next((p for p in imported_data["presets"] if p.get("id") == active_id), None)
+            if not active_preset and imported_data["presets"]:
+                active_preset = imported_data["presets"][0]
+                active_id = active_preset.get("id")
+                imported_data["active_preset_id"] = active_id
+                _atomic_write_json(target_file, imported_data)
+
+            if active_preset and active_preset.get("data"):
+                pegawai_target = os.path.join(APP_DATA_DIR, "daftar_pegawai.json")
+                _atomic_write_json(pegawai_target, active_preset["data"])
+
+            _log(f"Presets successfully imported from: {chosen_path} ({len(imported_data.get('presets', []))} presets)")
+            self._json({
+                "ok": True,
+                "message": f"Berhasil memulihkan {len(imported_data.get('presets', []))} preset dari {os.path.basename(chosen_path)}!",
+                "presets": imported_data.get("presets", []),
+                "active_preset_id": active_id,
+                "active_preset_name": active_preset.get("name", "") if active_preset else ""
+            })
+        except json.JSONDecodeError as je:
+            self._json({"ok": False, "error": f"Berkas JSON rusak atau tidak dapat dibaca: {je}"}, 400)
+        except Exception as e:
+            _log(f"Import presets error: {e}")
             self._json({"ok": False, "error": str(e)}, 500)
 
     def _handle_timemark_edit_time(self):
@@ -2470,6 +2667,7 @@ def main():
     _log(f"Python: {sys.version}")
     _log(f"Tesseract: {TESSERACT_CMD} exists={os.path.exists(TESSERACT_CMD)}")
     _log(f"Poppler: {POPPLER_DIR} exists={os.path.exists(POPPLER_DIR)}")
+    _init_persistent_storage()
     
     if not os.path.isdir(DIST_DIR):
         msg = f"Build not found at {DIST_DIR}"
@@ -2490,7 +2688,7 @@ def main():
     print("[OK] Opening desktop window...")
 
     webview.create_window(
-        "Sintelis Utility 2.0 (v1.5.6)",
+        "Sintelis Utility 2.0 (v1.5.7)",
         f"http://localhost:{PORT}",
         width=1400,
         height=900,

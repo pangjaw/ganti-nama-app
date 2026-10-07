@@ -248,6 +248,71 @@ export default function EmployeeManagerPanel() {
     }
   };
 
+  // Export / Backup all presets to JSON file
+  const handleExportPresets = async () => {
+    setLoading(true);
+    setFeedback(null);
+    try {
+      const res = await fetch('/api/timemark/export-presets', { method: 'POST' });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        setFeedback({
+          type: 'success',
+          text: `✓ ${data.message || 'Cadangan preset berhasil disimpan!'}`
+        });
+      } else if (data.cancelled) {
+        // User cancelled dialog
+      } else {
+        setFeedback({
+          type: 'error',
+          text: 'Gagal mengekspor cadangan: ' + (data.error || 'Terjadi kesalahan')
+        });
+      }
+    } catch (err) {
+      setFeedback({ type: 'error', text: 'Galat ekspor: ' + err.message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Import / Restore presets from JSON backup file
+  const handleImportPresets = async () => {
+    setLoading(true);
+    setFeedback(null);
+    try {
+      const res = await fetch('/api/timemark/import-presets', { method: 'POST' });
+      const data = await res.json();
+      if (res.ok && data.ok) {
+        if (data.presets) {
+          setPresets(data.presets);
+          const actId = data.active_preset_id || data.presets[0]?.id;
+          setActivePresetId(actId);
+          const activeObj = data.presets.find(p => p.id === actId);
+          if (activeObj && activeObj.data) {
+            setResor(activeObj.data.resor || { nama: '', nipp: '', no_sc: '' });
+            setKaurList(activeObj.data.kaur || []);
+            setPncList(activeObj.data.pnc || []);
+          }
+        }
+        setFeedback({
+          type: 'success',
+          text: `✓ ${data.message || 'Preset berhasil dipulihkan dari cadangan!'}`
+        });
+      } else if (data.cancelled) {
+        // User cancelled dialog
+      } else {
+        setFeedback({
+          type: 'error',
+          text: 'Gagal memulihkan preset: ' + (data.error || 'Terjadi kesalahan')
+        });
+      }
+    } catch (err) {
+      setFeedback({ type: 'error', text: 'Galat pemulihan: ' + err.message });
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', height: '100%', overflowY: 'auto', paddingRight: '0.5rem' }}>
       
@@ -258,11 +323,11 @@ export default function EmployeeManagerPanel() {
             <span>👥</span> Manajemen Profil Pegawai & Roster Dinasan
           </h3>
           <p style={{ fontSize: '0.825rem', color: 'var(--text-secondary)', margin: '0.25rem 0 0 0' }}>
-            Data di menu ini otomatis digunakan untuk Koreksi Personil PDF, Ekspor Tablo Checklist, dan Ekspor Jadwal Dinasan.
+            Tersimpan aman & permanen di AppData pengguna. Data otomatis dipakai untuk Koreksi Personil PDF, Tablo, dan Jadwal Dinasan.
           </p>
         </div>
 
-        {/* Preset Selector */}
+        {/* Preset Selector & Action Buttons */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
           <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>Pilih Preset:</label>
           <select
@@ -280,7 +345,7 @@ export default function EmployeeManagerPanel() {
             title="Simpan perubahan langsung ke preset yang sedang dibuka ini"
             style={{ padding: '0.45rem 0.85rem', background: 'var(--accent)', color: '#ffffff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.825rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem' }}
           >
-            <span>💾</span> Simpan ke Preset Ini
+            <span>💾</span> Simpan Preset Ini
           </button>
           <button
             onClick={handleSaveNewPreset}
@@ -288,7 +353,23 @@ export default function EmployeeManagerPanel() {
             title="Simpan data saat ini sebagai preset baru dengan nama berbeda"
             style={{ padding: '0.45rem 0.85rem', background: 'var(--bg-card-hover)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.825rem', fontWeight: 500 }}
           >
-            + Simpan Preset Baru
+            + Preset Baru
+          </button>
+          <button
+            onClick={handleExportPresets}
+            disabled={saving || loading}
+            title="Ekspor seluruh preset ke berkas JSON untuk cadangan"
+            style={{ padding: '0.45rem 0.85rem', background: 'rgba(59, 130, 246, 0.12)', color: '#60A5FA', border: '1px solid rgba(59, 130, 246, 0.35)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.825rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+          >
+            <span>📤</span> Cadangkan
+          </button>
+          <button
+            onClick={handleImportPresets}
+            disabled={saving || loading}
+            title="Pulihkan preset dari berkas JSON cadangan"
+            style={{ padding: '0.45rem 0.85rem', background: 'rgba(16, 185, 129, 0.12)', color: '#34D399', border: '1px solid rgba(16, 185, 129, 0.35)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.825rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+          >
+            <span>📥</span> Pulihkan
           </button>
         </div>
       </div>
