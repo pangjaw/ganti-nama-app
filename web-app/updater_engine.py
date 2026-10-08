@@ -12,7 +12,7 @@ import threading
 import subprocess
 import tempfile
 
-APP_VERSION = "1.5.9"
+APP_VERSION = "1.6.0"
 DEFAULT_UPDATE_URL = "https://update.sintelboo.my.id/version.json"
 
 _update_state = {
@@ -165,9 +165,23 @@ $target = "{target_exe}"
 $temp = "{temp_exe}"
 $pid_to_kill = {current_pid}
 
+# 1. Matikan proses utama saat ini
 try {{ Stop-Process -Id $pid_to_kill -Force -ErrorAction SilentlyContinue }} catch {{}}
+
+# 2. Matikan SEMUA proses Windows yang menjalankan target (pohon proses PyInstaller bootloader & WebView)
+$targetName = [System.IO.Path]::GetFileName($target)
+if ($targetName) {{
+    try {{ taskkill.exe /F /IM "$targetName" /T 2>$null }} catch {{}}
+}}
+try {{
+    Get-Process | Where-Object {{
+        try {{ $_.Path -and ($_.Path.ToLower() -eq $target.ToLower()) }} catch {{ $false }}
+    }} | Stop-Process -Force -ErrorAction SilentlyContinue
+}} catch {{}}
+
 Start-Sleep -Seconds 2
 
+# 3. Loop Copy-Item dengan jeda hingga Windows melepas kunci berkas (file lock)
 $copied = $false
 for ($i = 0; $i -lt 30; $i++) {{
     try {{

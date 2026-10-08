@@ -2,7 +2,7 @@ import React from 'react';
 
 export default function BentoHeader({
   activePreset = 'Standar (Resor 1.21 Bogor)',
-  currentVersion = 'v1.5.9',
+  currentVersion = 'v1.6.0',
   updateAvailable = false,
   onOpenUpdateModal = null,
   mainTab = 'ocr',
@@ -13,8 +13,13 @@ export default function BentoHeader({
     switch (mainTab) {
       case 'ocr':
         return {
-          title: 'OCR & Penamaan Ceklis PDF',
-          sub: 'Standardisasi nama dokumen otomatis sesuai format BTP JAK & BTP BD'
+          title: 'Penamaan Ceklis PDF (Rename PDF)',
+          sub: 'Standardisasi penamaan dokumen otomatis sesuai format BTP JAK & BTP BD'
+        };
+      case 'audit_aset':
+        return {
+          title: 'Audit Kelengkapan Berkas Aset',
+          sub: 'Pemeriksaan kelengkapan dokumen checklist pemeliharaan per periode & stasiun'
         };
       case 'downloader':
         return {

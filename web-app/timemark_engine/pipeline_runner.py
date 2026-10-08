@@ -247,19 +247,27 @@ def _execute_pipeline_task(source_dir, target_dir, export_dir, merged_dir, selec
                 state["current_step"] = 5
                 state["progress"] = int((step_idx - 1) / total_steps * 100)
 
-            # Jika mode timpa berkas aktif, lakukan backup otomatis terlebih dahulu
+            # Jika mode timpa berkas aktif, lakukan backup otomatis terlebih dahulu (rekursif)
             if mode == "single" and overwrite_original:
+                from pathlib import Path
                 ts_str = time.strftime("%Y%m%d_%H%M%S")
                 backup_folder = os.path.join(source_dir, "backups", f"backup_{ts_str}")
                 os.makedirs(backup_folder, exist_ok=True)
                 add_log("info", f"💾 Membuat salinan cadangan otomatis di: {backup_folder}...")
-                pdf_files = [f for f in os.listdir(source_dir) if f.lower().endswith(".pdf")]
-                for pf in pdf_files:
+                src_path = Path(source_dir)
+                all_pdfs = [
+                    p for p in src_path.rglob("*.pdf")
+                    if "backups" not in p.parts and "_temp_merged" not in p.parts
+                ]
+                for p in all_pdfs:
                     try:
-                        shutil.copy2(os.path.join(source_dir, pf), os.path.join(backup_folder, pf))
+                        rel = p.relative_to(src_path)
+                        dst = Path(backup_folder) / rel
+                        dst.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(p, dst)
                     except Exception as be:
-                        add_log("warn", f"Gagal mencadangkan {pf}: {be}")
-                add_log("success", f"✓ {len(pdf_files)} berkas PDF berhasil dicadangkan dengan aman.")
+                        add_log("warn", f"Gagal mencadangkan {p.name}: {be}")
+                add_log("success", f"✓ {len(all_pdfs)} berkas PDF berhasil dicadangkan dengan aman.")
 
             cmd = [
                 py_exe, "--run-script", os.path.join(ENGINE_DIR, "merge_pdf_foto.py"),
@@ -271,20 +279,26 @@ def _execute_pipeline_task(source_dir, target_dir, export_dir, merged_dir, selec
             if not ok:
                 return
 
-            # Jika overwrite aktif, pindahkan hasil dari temp_merge_dir ke source_dir
+            # Jika overwrite aktif, timpa berkas tepat di posisi subfolder asalnya
             if mode == "single" and overwrite_original and temp_merge_dir:
+                from pathlib import Path
                 add_log("info", f"🔄 Memperbarui berkas di folder sumber: {source_dir}...")
-                merged_files = [f for f in os.listdir(temp_merge_dir) if f.lower().endswith(".pdf")]
+                src_path = Path(source_dir)
+                orig_file_map = {
+                    p.name.lower(): p for p in src_path.rglob("*.pdf")
+                    if "backups" not in p.parts and "_temp_merged" not in p.parts
+                }
+                merged_pdfs = list(Path(temp_merge_dir).rglob("*.pdf"))
                 replaced_count = 0
-                for mf in merged_files:
-                    src_m = os.path.join(temp_merge_dir, mf)
-                    dst_m = os.path.join(source_dir, mf)
+                for mp in merged_pdfs:
+                    dst = orig_file_map.get(mp.name.lower(), src_path / mp.name)
                     try:
-                        shutil.copy2(src_m, dst_m)
+                        dst.parent.mkdir(parents=True, exist_ok=True)
+                        shutil.copy2(mp, dst)
                         replaced_count += 1
                     except Exception as re:
-                        add_log("warn", f"Gagal menimpa {mf}: {re}")
-                add_log("success", f"✓ Berhasil menimpa {replaced_count} berkas PDF di folder sumber dengan hasil foto terbaru.")
+                        add_log("warn", f"Gagal menimpa {mp.name}: {re}")
+                add_log("success", f"✓ Berhasil menimpa {replaced_count} berkas PDF di posisi subfolder asalnya dengan hasil foto terbaru.")
                 try:
                     shutil.rmtree(temp_merge_dir)
                 except Exception:

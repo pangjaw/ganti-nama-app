@@ -699,7 +699,7 @@ export default function App() {
       <main className="app-main-workspace">
         {/* Bento Stats & Workspace Title Header */}
         <BentoHeader
-          currentVersion="v1.5.9"
+          currentVersion="v1.6.0"
           updateAvailable={updateAvailable}
           onOpenUpdateModal={() => setShowUpdateModal(true)}
           activePreset={activePresetName || "Standar (Resor 1.21 Bogor)"}
@@ -722,6 +722,15 @@ export default function App() {
         <TimemarkModule />
       </div>
 
+      {/* Audit Aset Tab View (Standalone Full Page) */}
+      <div style={{ display: mainTab === 'audit_aset' ? 'flex' : 'none', flexDirection: 'column', flex: 1, minHeight: 0, overflowY: 'auto', padding: '0.25rem 0.5rem' }}>
+        <AssetAuditPanel
+          results={results}
+          onLog={addLog}
+          onMessage={setMessage}
+        />
+      </div>
+
       {/* Downloader Tab View (Persisted in DOM to avoid reset on tab switch) */}
       <div style={{ display: mainTab === 'downloader' ? 'flex' : 'none', flexDirection: 'column', flex: 1, minHeight: 0, overflowY: 'auto' }}>
         <P3STEDownloader 
@@ -730,7 +739,7 @@ export default function App() {
         />
       </div>
 
-      {/* OCR Tab View (Persisted in DOM) */}
+      {/* OCR / Rename PDF Tab View (Persisted in DOM) */}
       <div className="main-content" style={{ display: mainTab === 'ocr' ? 'flex' : 'none' }}>
         {/* --------- LEFT PANEL --------- */}
         <div className="left-panel"

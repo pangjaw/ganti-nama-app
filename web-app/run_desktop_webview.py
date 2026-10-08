@@ -1614,15 +1614,20 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
                 self._json({"files": []})
                 return
             files = []
-            for fn in sorted(os.listdir(folder)):
-                if fn.lower().endswith(".pdf"):
-                    fp = os.path.join(folder, fn)
-                    if os.path.isfile(fp):
-                        files.append({
-                            "name": fn,
-                            "path": fp,
-                            "size": os.path.getsize(fp)
-                        })
+            for root, dirs, filenames in os.walk(folder):
+                # Abaikan folder cadangan / sistem agar tidak terhitung ganda
+                dirs[:] = [d for d in dirs if d.lower() not in ("backups", "_temp_merged", ".git", "node_modules")]
+                for fn in sorted(filenames):
+                    if fn.lower().endswith(".pdf"):
+                        fp = os.path.join(root, fn)
+                        if os.path.isfile(fp):
+                            rel_p = os.path.relpath(fp, folder).replace("\\", "/")
+                            files.append({
+                                "name": fn,
+                                "path": fp,
+                                "relPath": rel_p,
+                                "size": os.path.getsize(fp)
+                            })
             self._json({"files": files})
         except Exception as e:
             self._json({"error": str(e)}, 500)
@@ -2689,7 +2694,7 @@ def main():
     print("[OK] Opening desktop window...")
 
     webview.create_window(
-        "Sintelis Utility 2.0 (v1.5.9)",
+        "Sintelis Utility 2.0 (v1.6.0)",
         f"http://localhost:{PORT}",
         width=1400,
         height=900,

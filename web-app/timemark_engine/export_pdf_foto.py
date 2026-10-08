@@ -104,7 +104,7 @@ def _build_wesel_target_lookup(target_dir: str = "02_pdf_target") -> dict[str, l
     if not target_path.is_dir():
         return dict(lookup)
     
-    for pdf_file in target_path.glob("*.pdf"):
+    for pdf_file in target_path.rglob("*.pdf"):
         name = pdf_file.name
         m = re.search(r'PERAWATAN\s+(?:WESEL|POINT\s+LOCK|PERINTANG|PELALAU)\s+(.+?)\s+(\d{2})-(\d{2})-(\d{4})\.pdf$', name, re.I)
         if not m:

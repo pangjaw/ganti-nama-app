@@ -154,11 +154,16 @@ export async function listPdfsInFolder(dir) {
   } else if (dir.handle) {
     try {
       const names = [];
-      for await (const entry of dir.handle.values()) {
-        if (entry.kind === 'file' && entry.name.toLowerCase().endsWith('.pdf')) {
-          names.push(entry.name);
+      async function scanDirectory(handle) {
+        for await (const entry of handle.values()) {
+          if (entry.kind === 'file' && entry.name.toLowerCase().endsWith('.pdf')) {
+            names.push(entry.name);
+          } else if (entry.kind === 'directory' && entry.name.toLowerCase() !== 'backups' && entry.name.toLowerCase() !== '_temp_merged') {
+            await scanDirectory(entry);
+          }
         }
       }
+      await scanDirectory(dir.handle);
       return names;
     } catch (e) {
       console.error('Error reading directory handle:', e);
