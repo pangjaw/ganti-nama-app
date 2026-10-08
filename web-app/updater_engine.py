@@ -12,7 +12,7 @@ import threading
 import subprocess
 import tempfile
 
-APP_VERSION = "1.6.2"
+APP_VERSION = "1.6.3"
 DEFAULT_UPDATE_URL = "https://update.sintelboo.my.id/version.json"
 
 _update_state = {
@@ -151,82 +151,85 @@ def apply_update_and_restart():
     if getattr(sys, "frozen", False):
         exe_path = os.path.abspath(sys.executable)
         exe_dir = os.path.dirname(exe_path)
-        target_exe = os.path.join(exe_dir, "SintelisUtility.exe")
-        old_exe_to_clean = exe_path if exe_path.lower() != target_exe.lower() else ""
+        # Menimpa berkas yang SEDANG DIBUKA pengguna (misal SintelisUtility.exe, SintelisUtility(1).exe, dsb)
+        target_exe = exe_path
+        standard_exe = os.path.join(exe_dir, "SintelisUtility.exe")
     else:
         target_exe = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "dist", "SintelisUtility.exe"))
-        old_exe_to_clean = ""
+        standard_exe = target_exe
 
     current_pid = os.getpid()
 
-    # Script restart PowerShell yang tangguh & anti-gagal di Windows:
-    # 1. Pastikan proses lama berhenti (Stop-Process target PID)
-    # 2. Matikan semua proses terkait target maupun old_exe (pohon proses PyInstaller & WebView)
-    # 3. Loop copy dengan jeda nyata hingga sistem operasi melepas file lock
-    # 4. Bersihkan file lama berakhiran versi jika ada
-    # 5. Jalankan aplikasi baru via Start-Process
-    ps_content = f"""
-$target = "{target_exe}"
-$temp = "{temp_exe}"
-$old_to_clean = "{old_exe_to_clean}"
-$pid_to_kill = {current_pid}
+    cmd_file = os.path.join(tempfile.gettempdir(), "sintelis_updater.cmd")
+    log_file = os.path.join(tempfile.gettempdir(), "sintelis_updater.log")
 
-# 1. Matikan proses utama saat ini
-try {{ Stop-Process -Id $pid_to_kill -Force -ErrorAction SilentlyContinue }} catch {{}}
+    cmd_content = f"""@echo off
+setlocal
+set "TARGET={target_exe}"
+set "STANDARD={standard_exe}"
+set "TEMP_EXE={temp_exe}"
+set "LOG={log_file}"
 
-# 2. Matikan SEMUA proses Windows yang menjalankan target maupun berkas lama
-$targetName = [System.IO.Path]::GetFileName($target)
-if ($targetName) {{
-    try {{ taskkill.exe /F /IM "$targetName" /T 2>$null }} catch {{}}
-}}
-if ($old_to_clean) {{
-    $oldName = [System.IO.Path]::GetFileName($old_to_clean)
-    if ($oldName) {{
-        try {{ taskkill.exe /F /IM "$oldName" /T 2>$null }} catch {{}}
-    }}
-}}
-try {{
-    Get-Process | Where-Object {{
-        try {{
-            $p = $_.Path.ToLower()
-            $p -eq $target.ToLower() -or ($old_to_clean -and $p -eq $old_to_clean.ToLower())
-        }} catch {{ $false }}
-    }} | Stop-Process -Force -ErrorAction SilentlyContinue
-}} catch {{}}
+echo ============================================== >> "%LOG%"
+echo [%date% %time%] Updater Sintelis Utility Dimulai >> "%LOG%"
+echo TARGET: "%TARGET%" >> "%LOG%"
+echo STANDARD: "%STANDARD%" >> "%LOG%"
+echo TEMP_EXE: "%TEMP_EXE%" >> "%LOG%"
 
-Start-Sleep -Seconds 2
+:: 1. Beri jeda 1 detik agar response HTTP selesai terkirim ke antarmuka
+timeout /t 1 /nobreak >nul
 
-# 3. Loop Copy-Item dengan jeda hingga Windows melepas kunci berkas (file lock)
-$copied = $false
-for ($i = 0; $i -lt 30; $i++) {{
-    try {{
-        Copy-Item -LiteralPath $temp -Destination $target -Force -ErrorAction Stop
-        $copied = $true
-        break
-    }} catch {{
-        Start-Sleep -Seconds 1
-    }}
-}}
+:: 2. Matikan paksa PID pemanggil
+taskkill /F /PID {current_pid} >nul 2>&1
 
-if ($copied) {{
-    try {{ Remove-Item -LiteralPath $temp -Force -ErrorAction SilentlyContinue }} catch {{}}
-    if ($old_to_clean -and (Test-Path -LiteralPath $old_to_clean)) {{
-        try {{ Remove-Item -LiteralPath $old_to_clean -Force -ErrorAction SilentlyContinue }} catch {{}}
-    }}
-    Start-Process -FilePath $target
-}}
-"""
-    ps_file = os.path.join(tempfile.gettempdir(), "sintelis_updater.ps1")
-    with open(ps_file, "w", encoding="utf-8") as f:
-        f.write(ps_content)
+:: 3. Matikan semua instance SintelisUtility untuk melepas seluruh kunci berkas di Windows
+taskkill /F /IM "SintelisUtility*.exe" >nul 2>&1
+timeout /t 2 /nobreak >nul
 
-    DETACHED_PROCESS = 0x00000008
-    CREATE_NO_WINDOW = 0x08000000
-    subprocess.Popen(
-        ["powershell.exe", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", ps_file],
-        creationflags=DETACHED_PROCESS | CREATE_NO_WINDOW,
-        close_fds=True
+:: 4. Loop penimpaan berkas dengan verifikasi (maksimal 30 detik)
+set "COPIED=0"
+for /l %%i in (1,1,30) do (
+    copy /y "%TEMP_EXE%" "%TARGET%" >nul 2>&1
+    if not errorlevel 1 (
+        set "COPIED=1"
+        goto :after_copy
     )
+    echo [%date% %time%] Mencoba menimpa berkas (percobaan %%i)... >> "%LOG%"
+    timeout /t 1 /nobreak >nul
+)
 
-    threading.Thread(target=lambda: (time.sleep(1.0), os._exit(0)), daemon=True).start()
+:after_copy
+if "%COPIED%"=="1" (
+    echo [%date% %time%] Berkas target BERHASIL ditimpa! >> "%LOG%"
+    
+    :: Jika target bukan nama standard SintelisUtility.exe, sinkronkan juga ke standard
+    if /i not "%TARGET%"=="%STANDARD%" (
+        copy /y "%TEMP_EXE%" "%STANDARD%" >nul 2>&1
+    )
+    
+    :: Bersihkan berkas unduhan sementara di folder Temp
+    del /f /q "%TEMP_EXE%" >nul 2>&1
+    
+    :: Jalankan aplikasi yang baru di-update
+    start "" "%TARGET%"
+    echo [%date% %time%] Aplikasi baru berhasil diluncurkan: "%TARGET%" >> "%LOG%"
+) else (
+    echo [%date% %time%] GAGAL menimpa berkas setelah 30 percobaan >> "%LOG%"
+)
+
+:: Hapus skrip updater ini sendiri
+del "%~f0" >nul 2>&1
+"""
+
+    with open(cmd_file, "w", encoding="cp1252", errors="replace") as f:
+        f.write(cmd_content)
+
+    # ShellExecuteW via os.startfile: sepenuhnya mandiri, di-spawn oleh Windows Explorer
+    # Tidak pernah mati saat SintelisUtility di-kill oleh taskkill!
+    try:
+        os.startfile(cmd_file)
+    except Exception:
+        subprocess.Popen(["cmd.exe", "/c", cmd_file], creationflags=0x08000000, close_fds=True)
+
+    threading.Thread(target=lambda: (time.sleep(1.2), os._exit(0)), daemon=True).start()
     return {"ok": True, "message": "Restarting application to apply update..."}
