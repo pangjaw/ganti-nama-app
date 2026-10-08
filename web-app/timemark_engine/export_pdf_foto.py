@@ -1030,13 +1030,24 @@ def export_pdf(pdf_path: Path, output_root: Path, log_dir: Path,
 
     reader = PdfReader(str(pdf_path))
 
-    # ── Read ALL funclocs from page 1 ──
+    # ── Read ALL funclocs from page 1 (fast via pypdf) ──
     all_funclocs: list[str] = []
     page1_text = ""
-    with pdfplumber.open(str(pdf_path)) as pdf:
-        if pdf.pages:
-            page1_text = pdf.pages[0].extract_text() or ""
+    try:
+        if reader.pages:
+            page1_text = reader.pages[0].extract_text() or ""
             all_funclocs = extract_all_funclocs(page1_text)
+    except Exception:
+        pass
+
+    if not all_funclocs:
+        try:
+            with pdfplumber.open(str(pdf_path)) as pdf:
+                if pdf.pages:
+                    page1_text = pdf.pages[0].extract_text() or ""
+                    all_funclocs = extract_all_funclocs(page1_text)
+        except Exception:
+            pass
 
     # Multiple funclocs → force per-row export (each asset row gets own folder)
     force_per_row = len(all_funclocs) > 1
@@ -1094,12 +1105,21 @@ def export_pdf(pdf_path: Path, output_root: Path, log_dir: Path,
     out_dir = identifier_output_dir(output_root, btp, category, identifier)
     ensure_dir(out_dir)
 
-    # ── Find photo pages ──
+    # ── Find photo pages (Lightning-fast via pypdf) ──
     photo_pages: list[int] = []
-    with pdfplumber.open(str(pdf_path)) as _detect_pdf:
-        for i in range(start_page - 1, len(_detect_pdf.pages)):
-            if len(_detect_pdf.pages[i].images) >= 3:
+    try:
+        for i in range(start_page - 1, len(reader.pages)):
+            if len(reader.pages[i].images) >= 3:
                 photo_pages.append(i)
+    except Exception:
+        # Fallback to pdfplumber only if pypdf raised an exception
+        try:
+            with pdfplumber.open(str(pdf_path)) as _detect_pdf:
+                for i in range(start_page - 1, len(_detect_pdf.pages)):
+                    if len(_detect_pdf.pages[i].images) >= 3:
+                        photo_pages.append(i)
+        except Exception:
+            pass
 
     # ── Print Tree Information ──
     print(f"  ├── Kategori : {category} | Wilayah: {btp}", flush=True)
@@ -1108,6 +1128,9 @@ def export_pdf(pdf_path: Path, output_root: Path, log_dir: Path,
     if photo_pages:
         pages_str = ", ".join(f"Hal {p+1}" for p in photo_pages)
         print(f"  ├── Foto Doc : {pages_str}", flush=True)
+
+    if not photo_pages:
+        return 0
 
     # ── Multi-row export (WESEL / SINYAL / AXC): delegate per page ──
     if category in MULTI_ROW_CATEGORIES and photo_pages:
@@ -1456,7 +1479,9 @@ def main() -> int:
     ]
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-        for idx, (pdf_path, exported, captured_logs, err_info, is_missing) in enumerate(executor.map(_export_worker_job, tasks), 1):
+        future_to_task = {executor.submit(_export_worker_job, t): t[0] for t in tasks}
+        for idx, future in enumerate(concurrent.futures.as_completed(future_to_task), 1):
+            pdf_path, exported, captured_logs, err_info, is_missing = future.result()
             if is_missing:
                 print(f"[{idx}/{len(pdf_paths)}] ⏩ [SKIP] File tidak ditemukan: {pdf_path.name}", flush=True)
                 skipped_files.append(pdf_path.name)
