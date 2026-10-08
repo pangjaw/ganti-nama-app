@@ -149,33 +149,48 @@ def apply_update_and_restart():
             return {"ok": False, "error": "File pembaruan belum siap diunduh"}
 
     if getattr(sys, "frozen", False):
-        target_exe = os.path.abspath(sys.executable)
+        exe_path = os.path.abspath(sys.executable)
+        exe_dir = os.path.dirname(exe_path)
+        target_exe = os.path.join(exe_dir, "SintelisUtility.exe")
+        old_exe_to_clean = exe_path if exe_path.lower() != target_exe.lower() else ""
     else:
         target_exe = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "dist", "SintelisUtility.exe"))
+        old_exe_to_clean = ""
 
     current_pid = os.getpid()
 
     # Script restart PowerShell yang tangguh & anti-gagal di Windows:
     # 1. Pastikan proses lama berhenti (Stop-Process target PID)
-    # 2. Loop copy dengan jeda nyata hingga sistem operasi melepas file lock (hingga 30 detik)
-    # 3. Jalankan aplikasi baru via Start-Process
-    # 4. Bersihkan file sementara
+    # 2. Matikan semua proses terkait target maupun old_exe (pohon proses PyInstaller & WebView)
+    # 3. Loop copy dengan jeda nyata hingga sistem operasi melepas file lock
+    # 4. Bersihkan file lama berakhiran versi jika ada
+    # 5. Jalankan aplikasi baru via Start-Process
     ps_content = f"""
 $target = "{target_exe}"
 $temp = "{temp_exe}"
+$old_to_clean = "{old_exe_to_clean}"
 $pid_to_kill = {current_pid}
 
 # 1. Matikan proses utama saat ini
 try {{ Stop-Process -Id $pid_to_kill -Force -ErrorAction SilentlyContinue }} catch {{}}
 
-# 2. Matikan SEMUA proses Windows yang menjalankan target (pohon proses PyInstaller bootloader & WebView)
+# 2. Matikan SEMUA proses Windows yang menjalankan target maupun berkas lama
 $targetName = [System.IO.Path]::GetFileName($target)
 if ($targetName) {{
     try {{ taskkill.exe /F /IM "$targetName" /T 2>$null }} catch {{}}
 }}
+if ($old_to_clean) {{
+    $oldName = [System.IO.Path]::GetFileName($old_to_clean)
+    if ($oldName) {{
+        try {{ taskkill.exe /F /IM "$oldName" /T 2>$null }} catch {{}}
+    }}
+}}
 try {{
     Get-Process | Where-Object {{
-        try {{ $_.Path -and ($_.Path.ToLower() -eq $target.ToLower()) }} catch {{ $false }}
+        try {{
+            $p = $_.Path.ToLower()
+            $p -eq $target.ToLower() -or ($old_to_clean -and $p -eq $old_to_clean.ToLower())
+        }} catch {{ $false }}
     }} | Stop-Process -Force -ErrorAction SilentlyContinue
 }} catch {{}}
 
@@ -195,6 +210,9 @@ for ($i = 0; $i -lt 30; $i++) {{
 
 if ($copied) {{
     try {{ Remove-Item -LiteralPath $temp -Force -ErrorAction SilentlyContinue }} catch {{}}
+    if ($old_to_clean -and (Test-Path -LiteralPath $old_to_clean)) {{
+        try {{ Remove-Item -LiteralPath $old_to_clean -Force -ErrorAction SilentlyContinue }} catch {{}}
+    }}
     Start-Process -FilePath $target
 }}
 """
