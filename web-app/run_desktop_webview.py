@@ -1724,6 +1724,76 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
                 self._json({"ok": True, "assets": []})
                 return
 
+            # Indeks berkas target dari schedule.json
+            target_files_map = {}
+            target_files_list = []
+            seen_target_files = set()
+            sched_candidates = [
+                os.path.join(folder, "schedule.json"),
+                os.path.join(os.path.dirname(folder), "schedule.json"),
+                os.path.join(os.path.dirname(os.path.dirname(folder)), "schedule.json"),
+                os.path.join(BASE_DIR, "schedule.json"),
+                os.path.join(os.getcwd(), "schedule.json"),
+            ]
+            for sc_path in sched_candidates:
+                if os.path.isfile(sc_path):
+                    try:
+                        with open(sc_path, "r", encoding="utf-8") as sf:
+                            sdata = json.load(sf)
+                        for item in sdata.get("schedules", []):
+                            fn = item.get("file")
+                            if not fn:
+                                continue
+                            if fn not in seen_target_files:
+                                seen_target_files.add(fn)
+                                target_files_list.append({
+                                    "file": fn,
+                                    "category": item.get("category", ""),
+                                    "btp": item.get("btp", ""),
+                                    "date": item.get("iso_date", "")
+                                })
+                            for k in ["identifier", "base_identifier"]:
+                                ident = item.get(k)
+                                if ident:
+                                    norm_id = " ".join(re.sub(r'_\d{2}-\d{2}$', '', ident.strip().upper()).split())
+                                    if norm_id not in target_files_map:
+                                        target_files_map[norm_id] = []
+                                    if fn not in target_files_map[norm_id]:
+                                        target_files_map[norm_id].append(fn)
+                        break
+                    except Exception as e:
+                        _log(f"Error reading schedule candidate {sc_path}: {e}")
+
+            # Indeks berkas sumber dari pdf_photo_export_log.csv
+            source_files_map = {}
+            source_files_list = []
+            seen_source_files = set()
+            csv_candidates = [
+                os.path.join(folder, "logs", "pdf_photo_export_log.csv"),
+                os.path.join(os.path.dirname(folder), "logs", "pdf_photo_export_log.csv"),
+                os.path.join(BASE_DIR, "logs", "pdf_photo_export_log.csv"),
+                os.path.join(os.getcwd(), "logs", "pdf_photo_export_log.csv"),
+            ]
+            for c_path in csv_candidates:
+                if os.path.isfile(c_path):
+                    try:
+                        import csv
+                        with open(c_path, "r", encoding="utf-8", errors="ignore") as cf:
+                            reader = csv.DictReader(cf)
+                            for row in reader:
+                                p_pdf = row.get("pdf")
+                                p_name = row.get("asset_name")
+                                if p_pdf and p_name:
+                                    if p_pdf not in seen_source_files:
+                                        seen_source_files.add(p_pdf)
+                                        source_files_list.append(p_pdf)
+                                    norm_p = " ".join(p_name.strip().upper().split())
+                                    if norm_p not in source_files_map:
+                                        source_files_map[norm_p] = p_pdf
+                        break
+                    except Exception as e:
+                        _log(f"Error reading csv candidate {c_path}: {e}")
+
             assets = []
             for root, dirs, files in os.walk(folder):
                 photo_files = [f for f in files if f.lower() in ("0.jpg", "50.jpg", "100.jpg")]
@@ -1741,6 +1811,10 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
                 if station.lower().startswith("tim_") and len(parts) >= 4:
                     station = parts[-3]
                     category = parts[-2]
+
+                norm_detail = " ".join(re.sub(r'_\d{2}-\d{2}$', '', detail.strip().upper()).split())
+                matching_targets = target_files_map.get(norm_detail, [])
+                matching_source = source_files_map.get(norm_detail, "")
 
                 date_text = ""
                 date_file = os.path.join(root, "date.txt")
@@ -1766,11 +1840,18 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
                     "detail": detail,
                     "relPath": rel_path,
                     "dateText": date_text,
+                    "targetFiles": matching_targets,
+                    "sourceFile": matching_source,
                     "photos": photos
                 })
 
             assets.sort(key=lambda a: (a["station"], a["category"], a["detail"]))
-            self._json({"ok": True, "assets": assets})
+            self._json({
+                "ok": True,
+                "assets": assets,
+                "targetFiles": sorted(target_files_list, key=lambda x: x["file"]),
+                "sourceFiles": sorted(source_files_list)
+            })
         except Exception as e:
             _log(f"Error scanning photos: {e}")
             self._json({"ok": False, "error": str(e)}, 500)
@@ -2719,7 +2800,7 @@ def main():
     print("[OK] Opening desktop window...")
 
     webview.create_window(
-        "Sintelis Utility 2.0 (v1.6.6)",
+        "Sintelis Utility 2.0 (v1.6.7)",
         f"http://localhost:{PORT}",
         width=1400,
         height=900,
