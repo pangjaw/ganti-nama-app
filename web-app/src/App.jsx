@@ -693,15 +693,13 @@ export default function App() {
         setMainTab={setMainTab}
         isCollapsed={isSidebarCollapsed}
         setIsCollapsed={setIsSidebarCollapsed}
-        onOpenUpdateModal={() => setShowUpdateModal(true)}
-        appVersion="v1.5.8"
       />
 
       {/* ── Main Workspace ── */}
       <main className="app-main-workspace">
         {/* Bento Stats & Workspace Title Header */}
         <BentoHeader
-          currentVersion="v1.5.8"
+          currentVersion="v1.5.9"
           updateAvailable={updateAvailable}
           onOpenUpdateModal={() => setShowUpdateModal(true)}
           activePreset={activePresetName || "Standar (Resor 1.21 Bogor)"}

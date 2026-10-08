@@ -4,10 +4,7 @@ export default function Sidebar({
   mainTab,
   setMainTab,
   isCollapsed,
-  setIsCollapsed,
-  onOpenUpdateModal,
-  appVersion = 'v1.5.8',
-  updateAvailable = false
+  setIsCollapsed
 }) {
   const menuItems = [
     {
@@ -187,46 +184,6 @@ export default function Sidebar({
           gap: '0.6rem'
         }}
       >
-        {/* Update Checker Button */}
-        <button
-          type="button"
-          onClick={onOpenUpdateModal}
-          title="Periksa Pembaruan Aplikasi"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: isCollapsed ? 'center' : 'space-between',
-            gap: '0.5rem',
-            width: '100%',
-            padding: '0.55rem 0.65rem',
-            background: updateAvailable ? 'rgba(255, 115, 0, 0.2)' : 'rgba(255, 255, 255, 0.04)',
-            border: updateAvailable ? '1px solid var(--accent-orange)' : '1px solid var(--border-glass)',
-            borderRadius: '7px',
-            color: updateAvailable ? 'var(--accent-orange)' : 'var(--text-secondary)',
-            fontSize: '0.76rem',
-            fontWeight: 500,
-            cursor: 'pointer',
-            transition: 'all 0.15s ease'
-          }}
-        >
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
-            <span style={{ fontSize: '0.85rem' }}>🔄</span>
-            {!isCollapsed && <span>{updateAvailable ? 'Update Ada!' : 'Pembaruan'}</span>}
-          </div>
-          {!isCollapsed && (
-            <span
-              style={{
-                fontSize: '0.7rem',
-                padding: '2px 6px',
-                borderRadius: '4px',
-                background: 'rgba(255, 255, 255, 0.06)',
-                color: 'var(--text-primary)'
-              }}
-            >
-              {appVersion}
-            </span>
-          )}
-        </button>
 
         {/* Collapse / Expand Toggle Button */}
         <button

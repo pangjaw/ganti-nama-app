@@ -2689,7 +2689,7 @@ def main():
     print("[OK] Opening desktop window...")
 
     webview.create_window(
-        "Sintelis Utility 2.0 (v1.5.8)",
+        "Sintelis Utility 2.0 (v1.5.9)",
         f"http://localhost:{PORT}",
         width=1400,
         height=900,

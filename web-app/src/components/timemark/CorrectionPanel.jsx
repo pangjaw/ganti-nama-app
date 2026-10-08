@@ -68,7 +68,8 @@ export default function CorrectionPanel({ targetDir, onPickFolder }) {
         } else if (action === 'auto-correct-no-sc') {
           setPersFeedback({ type: 'success', text: `✓ Nomor SC pada ${data.result?.total_sc_corrected || 0} berkas berhasil dilengkapi.` });
         } else {
-          setPersFeedback({ type: 'info', text: `Audit selesai: ${data.result?.total_files || 0} berkas dipindai (${data.result?.summary?.needs_correction || 0} berkas perlu penyesuaian personil).` });
+          const needsCorrCount = data.result?.summary?.needs_correction ?? data.result?.critical_count ?? 0;
+          setPersFeedback({ type: 'info', text: `Audit selesai: ${data.result?.total_files || 0} berkas dipindai (${needsCorrCount} berkas perlu penyesuaian personil).` });
         }
       } else {
         setPersFeedback({ type: 'error', text: 'Gagal audit personil: ' + (data.error || 'Terjadi kesalahan') });
@@ -183,23 +184,23 @@ export default function CorrectionPanel({ targetDir, onPickFolder }) {
           )}
 
           {/* Ringkasan Metrik Audit */}
-          {persReport?.summary && (
+          {(persReport?.summary || persReport?.total_files !== undefined) && (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.75rem' }}>
               <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '0.85rem 1rem' }}>
                 <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block' }}>Total Dokumen</span>
-                <strong style={{ fontSize: '1.25rem', color: 'var(--text-primary)' }}>{persReport.summary.total_files}</strong>
+                <strong style={{ fontSize: '1.25rem', color: 'var(--text-primary)' }}>{persReport.summary?.total_files ?? persReport.total_files ?? 0}</strong>
               </div>
               <div style={{ background: 'var(--bg-card)', border: '1px solid #16a34a', borderRadius: '6px', padding: '0.85rem 1rem' }}>
                 <span style={{ fontSize: '0.75rem', color: '#86efac', display: 'block' }}>Sesuai Aturan (1K + 2P)</span>
-                <strong style={{ fontSize: '1.25rem', color: '#86efac' }}>{persReport.summary.compliant}</strong>
+                <strong style={{ fontSize: '1.25rem', color: '#86efac' }}>{persReport.summary?.compliant ?? persReport.ok_count ?? 0}</strong>
               </div>
               <div style={{ background: 'var(--bg-card)', border: '1px solid #d97706', borderRadius: '6px', padding: '0.85rem 1rem' }}>
                 <span style={{ fontSize: '0.75rem', color: '#fde68a', display: 'block' }}>Perlu Koreksi Personil</span>
-                <strong style={{ fontSize: '1.25rem', color: '#fde68a' }}>{persReport.summary.needs_correction}</strong>
+                <strong style={{ fontSize: '1.25rem', color: '#fde68a' }}>{persReport.summary?.needs_correction ?? persReport.critical_count ?? 0}</strong>
               </div>
               <div style={{ background: 'var(--bg-card)', border: '1px solid #3b82f6', borderRadius: '6px', padding: '0.85rem 1rem' }}>
                 <span style={{ fontSize: '0.75rem', color: '#93c5fd', display: 'block' }}>Nomor SC Kurang</span>
-                <strong style={{ fontSize: '1.25rem', color: '#93c5fd' }}>{persReport.summary.needs_sc_correction || 0}</strong>
+                <strong style={{ fontSize: '1.25rem', color: '#93c5fd' }}>{persReport.summary?.needs_sc_correction ?? 0}</strong>
               </div>
             </div>
           )}
@@ -221,9 +222,9 @@ export default function CorrectionPanel({ targetDir, onPickFolder }) {
                     <tr key={idx} style={{ borderBottom: '1px solid var(--border-color)' }}>
                       <td style={{ padding: '0.6rem 0.75rem', color: 'var(--text-primary)', wordBreak: 'break-all' }}>{f.file}</td>
                       <td style={{ padding: '0.6rem 0.75rem' }}>
-                        {f.status === 'compliant' && !f.needs_sc_correction ? (
+                        {(f.status === 'compliant' || f.status === 'OK' || (!f.needs_correction && !f.needs_sc_correction)) ? (
                           <span style={{ padding: '0.2rem 0.5rem', background: '#14532d', color: '#86efac', borderRadius: '4px', fontSize: '0.75rem' }}>✅ Sesuai</span>
-                        ) : f.needs_sc_correction ? (
+                        ) : f.needs_sc_correction && !f.needs_correction ? (
                           <span style={{ padding: '0.2rem 0.5rem', background: '#1e3a5f', color: '#93c5fd', borderRadius: '4px', fontSize: '0.75rem' }}>🧾 SC Kurang</span>
                         ) : (
                           <span style={{ padding: '0.2rem 0.5rem', background: '#78350f', color: '#fde68a', borderRadius: '4px', fontSize: '0.75rem' }}>⚠️ Perlu Koreksi</span>

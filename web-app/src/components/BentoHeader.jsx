@@ -2,7 +2,7 @@ import React from 'react';
 
 export default function BentoHeader({
   activePreset = 'Standar (Resor 1.21 Bogor)',
-  currentVersion = 'v1.5.8',
+  currentVersion = 'v1.5.9',
   updateAvailable = false,
   onOpenUpdateModal = null,
   mainTab = 'ocr',
@@ -65,22 +65,22 @@ export default function BentoHeader({
         <div
           className="bento-card"
           onClick={() => {
-            if (updateAvailable && onOpenUpdateModal) {
+            if (onOpenUpdateModal) {
               onOpenUpdateModal();
             }
           }}
           style={{
-            cursor: updateAvailable ? 'pointer' : 'default',
+            cursor: 'pointer',
             borderColor: updateAvailable ? '#FF7300' : 'var(--border-color)',
             boxShadow: updateAvailable
-              ? '0 0 16px rgba(255, 115, 0, 0.4), inset 0 0 12px rgba(255, 115, 0, 0.15)'
+              ? '0 0 20px rgba(255, 115, 0, 0.55), inset 0 0 12px rgba(255, 115, 0, 0.2)'
               : 'none',
             background: updateAvailable
-              ? 'linear-gradient(135deg, rgba(255, 115, 0, 0.12) 0%, var(--bg-card) 75%)'
+              ? 'linear-gradient(135deg, rgba(255, 115, 0, 0.16) 0%, var(--bg-card) 75%)'
               : 'var(--bg-card)',
             transition: 'all 0.3s ease'
           }}
-          title={updateAvailable ? 'Versi baru tersedia! Klik untuk memperbarui.' : 'Versi aplikasi saat ini.'}
+          title={updateAvailable ? 'Versi baru tersedia! Klik untuk memperbarui.' : 'Versi aplikasi saat ini. Klik untuk periksa pembaruan.'}
         >
           <div className="bento-card-top">
             <span className="bento-card-label" style={{ color: updateAvailable ? '#FF9433' : 'var(--text-secondary)' }}>
@@ -95,10 +95,11 @@ export default function BentoHeader({
                   background: '#FF7300',
                   color: '#FFFFFF',
                   fontWeight: 700,
-                  boxShadow: '0 0 8px #FF7300',
+                  boxShadow: '0 0 10px #FF7300',
                   display: 'inline-flex',
                   alignItems: 'center',
-                  gap: '4px'
+                  gap: '4px',
+                  animation: 'pulse 1.8s infinite ease-in-out'
                 }}
               >
                 <span style={{ fontSize: '0.6rem' }}>●</span> UPDATE TERSEDIA
@@ -122,13 +123,13 @@ export default function BentoHeader({
             className="bento-card-value"
             style={{
               color: updateAvailable ? '#FF9433' : '#FFFFFF',
-              textShadow: updateAvailable ? '0 0 10px rgba(255, 115, 0, 0.5)' : 'none'
+              textShadow: updateAvailable ? '0 0 12px rgba(255, 115, 0, 0.6)' : 'none'
             }}
           >
             {currentVersion}
           </div>
           <div className="bento-card-sub" style={{ color: updateAvailable ? '#FFAA5B' : 'var(--text-secondary)' }}>
-            {updateAvailable ? '⚡ Klik di sini untuk mengunduh update baru' : 'Sintelis Desktop Suite (Stable)'}
+            {updateAvailable ? '⚡ UPDATE TERSEDIA — Klik untuk perbarui aplikasi!' : 'Sintelis Desktop Suite (Klik untuk periksa update)'}
           </div>
         </div>
 

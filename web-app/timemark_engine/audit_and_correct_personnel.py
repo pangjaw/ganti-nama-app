@@ -371,15 +371,20 @@ def audit_folder(folder_path: Path, pegawai_cfg: dict = None):
         m_date = re.search(r'(\d{2})-(\d{2})-(\d{4})', fname)
         file_date_str = m_date.group(0) if m_date else ''
 
+        is_compliant = (severity == 'OK')
+        needs_corr = (severity == 'CRITICAL')
+        needs_sc = bool(missing_no_sc)
+
         files_result.append({
             'file': fname,
             'path': str(pdf_p).replace('\\', '/'),
             'date': file_date_str,
-            'status': status_code,
+            'status': 'compliant' if (is_compliant and not needs_sc) else status_code,
+            'status_code': status_code,
             'status_label': status_label,
             'severity': severity,
-            'needs_correction': (severity == 'CRITICAL'),
-            'needs_sc_correction': bool(missing_no_sc),
+            'needs_correction': needs_corr,
+            'needs_sc_correction': needs_sc,
             'missing_no_sc': missing_no_sc,
             'no_sc_missing_count': len(missing_no_sc),
             'unauthorized': unauth,
@@ -392,6 +397,15 @@ def audit_folder(folder_path: Path, pegawai_cfg: dict = None):
             'num_pnc': len(found_p)
         })
 
+    total_sc_missing = sum(1 for f in files_result if f.get('needs_sc_correction'))
+    summary = {
+        'total_files': len(files_result),
+        'compliant': ok_count,
+        'needs_correction': critical_count,
+        'needs_sc_correction': total_sc_missing,
+        'warning_count': warning_count,
+    }
+
     return {
         'total_files': len(files_result),
         'ok_count': ok_count,
@@ -399,6 +413,7 @@ def audit_folder(folder_path: Path, pegawai_cfg: dict = None):
         'warning_count': warning_count,
         'mismatch_count': critical_count + warning_count,
         'counts_by_key': counts_by_key,
+        'summary': summary,
         'files': files_result
     }
 
