@@ -2,7 +2,7 @@ import React from 'react';
 
 export default function BentoHeader({
   activePreset = 'Standar (Resor 1.21 Bogor)',
-  currentVersion = 'v1.6.4',
+  currentVersion = 'v1.6.5',
   updateAvailable = false,
   onOpenUpdateModal = null,
   mainTab = 'ocr',
@@ -62,8 +62,9 @@ export default function BentoHeader({
         className="bento-header-grid"
         style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
-          gap: '0.75rem'
+          gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+          gap: '0.75rem',
+          width: '100%'
         }}
       >
         {/* Card 1: Versi Aplikasi */}

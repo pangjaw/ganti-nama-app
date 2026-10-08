@@ -215,10 +215,10 @@ export default function ExcelExportPanel({ targetDir, exportDir }) {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', height: '100%', overflowY: 'auto', paddingRight: '0.5rem' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', height: '100%', width: '100%', overflowY: 'auto', paddingRight: '0.5rem' }}>
       
       {/* Header Info */}
-      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '1rem 1.25rem' }}>
+      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '1rem 1.25rem', width: '100%' }}>
         <h3 style={{ fontSize: '1.1rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0, display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <span>📊</span> Ekspor Dokumen Resmi Excel
         </h3>
@@ -228,7 +228,7 @@ export default function ExcelExportPanel({ targetDir, exportDir }) {
       </div>
 
       {/* Pemilihan Folder / Berkas Sumber Dokumen */}
-      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '1rem 1.25rem' }}>
+      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '1rem 1.25rem', width: '100%' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem' }}>
           <label style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
             <span>📁</span> Sumber Berkas / Folder (PDF atau Jadwal):
@@ -296,7 +296,7 @@ export default function ExcelExportPanel({ targetDir, exportDir }) {
       </div>
 
       {/* Pemilihan Folder Output Penyimpanan */}
-      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '1rem 1.25rem' }}>
+      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '1rem 1.25rem', width: '100%' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.6rem' }}>
           <label style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
             <span>💾</span> Folder Simpan Output Excel:
@@ -353,21 +353,22 @@ export default function ExcelExportPanel({ targetDir, exportDir }) {
           color: feedback.type === 'success' ? '#86efac' : '#fca5a5',
           border: `1px solid ${feedback.type === 'success' ? '#22c55e' : '#ef4444'}`,
           whiteSpace: 'pre-line',
-          lineHeight: 1.5
+          lineHeight: 1.5,
+          width: '100%'
         }}>
           {feedback.text}
         </div>
       )}
 
       {/* Unified Single Export Panel */}
-      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '1.25rem', width: '100%' }}>
         
         {/* Pilihan Jenis Dokumen */}
         <div>
           <label style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--text-primary)', display: 'block', marginBottom: '0.65rem' }}>
             🎯 Dokumen yang Ingin Dibuat:
           </label>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '0.75rem' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '0.75rem', width: '100%' }}>
             
             {/* Opsi 1: Keduanya */}
             <div
@@ -589,7 +590,7 @@ export default function ExcelExportPanel({ targetDir, exportDir }) {
 
       {/* Riwayat Berkas yang Baru Dibuat */}
       {historyFiles.length > 0 && (
-        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '1.25rem' }}>
+        <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '1.25rem', width: '100%' }}>
           <h4 style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-primary)', margin: '0 0 0.75rem 0' }}>
             📁 Berkas Excel yang Baru Dihasilkan:
           </h4>

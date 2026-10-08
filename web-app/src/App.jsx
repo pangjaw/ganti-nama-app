@@ -699,7 +699,7 @@ export default function App() {
       <main className="app-main-workspace">
         {/* Bento Stats & Workspace Title Header */}
         <BentoHeader
-          currentVersion="v1.6.4"
+          currentVersion="v1.6.5"
           updateAvailable={updateAvailable}
           onOpenUpdateModal={() => setShowUpdateModal(true)}
           activePreset={activePresetName || "Standar (Resor 1.21 Bogor)"}
@@ -718,12 +718,12 @@ export default function App() {
         </div>
 
       {/* Timemark Tab View (Persisted in DOM) */}
-      <div style={{ display: mainTab === 'timemark' ? 'flex' : 'none', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+      <div style={{ display: mainTab === 'timemark' ? 'flex' : 'none', flexDirection: 'column', flex: 1, width: '100%', minHeight: 0, overflow: 'hidden' }}>
         <TimemarkModule />
       </div>
 
       {/* Audit Aset Tab View (Standalone Full Page) */}
-      <div style={{ display: mainTab === 'audit_aset' ? 'flex' : 'none', flexDirection: 'column', flex: 1, minHeight: 0, overflowY: 'auto', padding: '0.25rem 0.5rem' }}>
+      <div style={{ display: mainTab === 'audit_aset' ? 'flex' : 'none', flexDirection: 'column', flex: 1, width: '100%', minHeight: 0, overflowY: 'auto', padding: '0.25rem 0.5rem' }}>
         <AssetAuditPanel
           results={results}
           onLog={addLog}
@@ -732,7 +732,7 @@ export default function App() {
       </div>
 
       {/* Downloader Tab View (Persisted in DOM to avoid reset on tab switch) */}
-      <div style={{ display: mainTab === 'downloader' ? 'flex' : 'none', flexDirection: 'column', flex: 1, minHeight: 0, overflowY: 'auto' }}>
+      <div style={{ display: mainTab === 'downloader' ? 'flex' : 'none', flexDirection: 'column', flex: 1, width: '100%', minHeight: 0, overflowY: 'auto' }}>
         <P3STEDownloader 
           onSendToOCR={handleHandoffFromDownloader} 
           onStopAllProcesses={handleCancel} 
@@ -740,7 +740,7 @@ export default function App() {
       </div>
 
       {/* OCR / Rename PDF Tab View (Persisted in DOM) */}
-      <div className="main-content" style={{ display: mainTab === 'ocr' ? 'flex' : 'none' }}>
+      <div className="main-content" style={{ display: mainTab === 'ocr' ? 'flex' : 'none', width: '100%' }}>
         {/* --------- LEFT PANEL --------- */}
         <div className="left-panel"
           onDragOver={e => { e.preventDefault(); }}

@@ -82,10 +82,10 @@ export default function CorrectionPanel({ targetDir, onPickFolder }) {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', height: '100%', overflowY: 'auto', paddingRight: '0.5rem' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', height: '100%', width: '100%', overflowY: 'auto', paddingRight: '0.5rem' }}>
       
       {/* Folder Indicator Bar */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '1rem 1.25rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '1rem 1.25rem', width: '100%' }}>
         <div>
           <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', display: 'block' }}>Folder Target Berkas PDF:</span>
           <strong style={{ fontSize: '0.9rem', color: 'var(--text-primary)' }}>{targetDir || 'Belum dipilih (Pilih folder di Tab Pipeline atau klik tombol di kanan)'}</strong>
@@ -134,9 +134,9 @@ export default function CorrectionPanel({ targetDir, onPickFolder }) {
 
       {/* SECTION 1: AUDIT & KOREKSI PERSONIL */}
       {activeSubSection === 'personnel' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', width: '100%' }}>
           
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '1.25rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '1.25rem', width: '100%' }}>
             <div>
               <h4 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
                 Kepatuhan Personil Formulir Checklist PDF
@@ -185,7 +185,7 @@ export default function CorrectionPanel({ targetDir, onPickFolder }) {
 
           {/* Ringkasan Metrik Audit */}
           {(persReport?.summary || persReport?.total_files !== undefined) && (
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '0.75rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, minmax(0, 1fr))', gap: '0.75rem', width: '100%' }}>
               <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '6px', padding: '0.85rem 1rem' }}>
                 <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block' }}>Total Dokumen</span>
                 <strong style={{ fontSize: '1.25rem', color: 'var(--text-primary)' }}>{persReport.summary?.total_files ?? persReport.total_files ?? 0}</strong>
@@ -207,7 +207,7 @@ export default function CorrectionPanel({ targetDir, onPickFolder }) {
 
           {/* Tabel Hasil Audit Personil */}
           {persReport?.files && (
-            <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden' }}>
+            <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden', width: '100%' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.825rem' }}>
                 <thead>
                   <tr style={{ background: 'var(--bg-secondary)', color: 'var(--text-secondary)', textAlign: 'left', borderBottom: '1px solid var(--border-color)' }}>
@@ -248,9 +248,9 @@ export default function CorrectionPanel({ targetDir, onPickFolder }) {
 
       {/* SECTION 2: KOREKSI SERAT OPTIK */}
       {activeSubSection === 'serat_optik' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', width: '100%' }}>
           
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '1.25rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '1.25rem', width: '100%' }}>
             <div>
               <h4 style={{ fontSize: '1rem', fontWeight: 600, color: 'var(--text-primary)', margin: 0 }}>
                 Koreksi Nilai Core Serat Optik & OTB
@@ -292,7 +292,7 @@ export default function CorrectionPanel({ targetDir, onPickFolder }) {
 
           {/* Tabel Serat Optik */}
           {soItems.length > 0 && (
-            <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden' }}>
+            <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', overflow: 'hidden', width: '100%' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.825rem' }}>
                 <thead>
                   <tr style={{ background: 'var(--bg-secondary)', color: 'var(--text-secondary)', textAlign: 'left', borderBottom: '1px solid var(--border-color)' }}>

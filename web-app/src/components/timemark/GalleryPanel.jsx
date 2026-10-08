@@ -180,10 +180,10 @@ export default function GalleryPanel({ exportDir, onPickFolder }) {
   });
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem', height: '100%', overflowY: 'auto', paddingRight: '0.5rem' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem', height: '100%', width: '100%', overflowY: 'auto', paddingRight: '0.5rem' }}>
       
       {/* Top Bar: Folder & Search */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '0.85rem 1.25rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '0.85rem 1.25rem', width: '100%' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
           <div>
             <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block' }}>Folder Foto Ekspor:</span>
@@ -192,19 +192,19 @@ export default function GalleryPanel({ exportDir, onPickFolder }) {
           <button
             onClick={fetchPhotos}
             disabled={loading}
-            style={{ padding: '0.35rem 0.65rem', background: 'var(--bg-secondary)', color: 'var(--text-secondary)', border: '1px solid var(--border-color)', borderRadius: '5px', cursor: 'pointer', fontSize: '0.75rem' }}
+            style={{ padding: '0.4rem 0.75rem', background: 'var(--bg-secondary)', color: 'var(--text-secondary)', border: '1px solid var(--border-color)', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 500 }}
           >
             🔄 Refresh
           </button>
         </div>
 
-        <div style={{ display: 'flex', gap: '0.5rem', width: '320px' }}>
+        <div style={{ display: 'flex', gap: '0.5rem', width: '360px' }}>
           <input
             type="text"
             placeholder="Cari stasiun atau aset (cth: CLT, W11A, ZP)..."
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
-            style={{ width: '100%', padding: '0.45rem 0.75rem', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '6px', color: 'var(--text-primary)', fontSize: '0.825rem' }}
+            style={{ width: '100%', padding: '0.5rem 0.85rem', background: 'var(--bg-secondary)', border: '1px solid var(--border-color)', borderRadius: '6px', color: 'var(--text-primary)', fontSize: '0.825rem' }}
           />
         </div>
       </div>
@@ -236,37 +236,37 @@ export default function GalleryPanel({ exportDir, onPickFolder }) {
         </div>
       )}
 
-      {/* Grid Kartu Aset */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(460px, 1fr))', gap: '1rem' }}>
+      {/* Grid Kartu Aset (3 Kolom Responsif Sesuai Ukuran Layar) */}
+      <div className="gallery-asset-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: '1.25rem', width: '100%' }}>
         {filteredAssets.map((asset, idx) => (
-          <div key={idx} style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px', padding: '1rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          <div key={idx} style={{ background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '1.15rem', display: 'flex', flexDirection: 'column', gap: '0.85rem', boxShadow: '0 4px 16px rgba(0,0,0,0.15)' }}>
             
             {/* Card Header */}
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.6rem' }}>
               <div>
-                <span style={{ fontSize: '0.75rem', color: 'var(--accent)', fontWeight: 600, textTransform: 'uppercase' }}>
+                <span style={{ fontSize: '0.8rem', color: 'var(--accent)', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.03em' }}>
                   {asset.station} • {asset.asset_type}
                 </span>
-                <h4 style={{ fontSize: '0.95rem', fontWeight: 600, color: 'var(--text-primary)', margin: '0.15rem 0 0 0' }}>
+                <h4 style={{ fontSize: '1.05rem', fontWeight: 700, color: 'var(--text-primary)', margin: '0.15rem 0 0 0' }}>
                   {asset.detail}
                 </h4>
               </div>
-              <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', background: 'var(--bg-secondary)', padding: '0.2rem 0.5rem', borderRadius: '4px' }}>
+              <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', background: 'var(--bg-secondary)', padding: '0.25rem 0.55rem', borderRadius: '5px', fontWeight: 500 }}>
                 {asset.dateText || 'Belum ada tanggal'}
               </span>
             </div>
 
             {/* 3 Photos Grid */}
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.5rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '0.65rem' }}>
               {['0.jpg', '50.jpg', '100.jpg'].map((photoName) => {
                 const photoObj = (asset.photos || []).find(p => p.name === photoName);
                 return (
-                  <div key={photoName} style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem', background: 'var(--bg-secondary)', borderRadius: '6px', padding: '0.4rem', border: '1px solid var(--border-color)' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: 'var(--text-secondary)' }}>
+                  <div key={photoName} style={{ display: 'flex', flexDirection: 'column', gap: '0.45rem', background: 'var(--bg-secondary)', borderRadius: '8px', padding: '0.5rem', border: '1px solid var(--border-color)' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
                       <strong>Foto {photoName.replace('.jpg', '')}%</strong>
                     </div>
                     
-                    <div style={{ width: '100%', height: '110px', background: '#000000', borderRadius: '4px', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <div style={{ width: '100%', height: '165px', background: '#000000', borderRadius: '6px', overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       {photoObj ? (
                         <img
                           src={photoObj.url}
@@ -275,30 +275,30 @@ export default function GalleryPanel({ exportDir, onPickFolder }) {
                           loading="lazy"
                         />
                       ) : (
-                        <span style={{ fontSize: '0.7rem', color: '#64748b' }}>Kosong</span>
+                        <span style={{ fontSize: '0.75rem', color: '#64748b' }}>Kosong</span>
                       )}
                     </div>
 
                     {/* Button Actions per Photo */}
-                    <div style={{ display: 'flex', gap: '0.25rem', marginTop: '0.15rem' }}>
+                    <div style={{ display: 'flex', gap: '0.3rem', marginTop: '0.15rem' }}>
                       <button
                         onClick={() => openEditTimeModal(asset, photoName)}
                         title="Ubah teks tanggal & jam"
-                        style={{ flex: 1, padding: '0.25rem 0', background: 'var(--bg-card-hover)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '4px', cursor: 'pointer', fontSize: '0.7rem' }}
+                        style={{ flex: 1, padding: '0.35rem 0.15rem', background: 'var(--bg-card-hover)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '4px', cursor: 'pointer', fontSize: '0.725rem', fontWeight: 500 }}
                       >
                         🕒 Jam
                       </button>
                       <button
                         onClick={() => openEditCoordModal(asset, photoName)}
                         title="Geser posisi kotak watermark"
-                        style={{ flex: 1, padding: '0.25rem 0', background: 'var(--bg-card-hover)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '4px', cursor: 'pointer', fontSize: '0.7rem' }}
+                        style={{ flex: 1, padding: '0.35rem 0.15rem', background: 'var(--bg-card-hover)', color: 'var(--text-primary)', border: '1px solid var(--border-color)', borderRadius: '4px', cursor: 'pointer', fontSize: '0.725rem', fontWeight: 500 }}
                       >
                         📐 Geser
                       </button>
                       <button
                         onClick={() => openReplacePhotoModal(asset, photoName)}
                         title="Ganti berkas foto ini"
-                        style={{ flex: 1, padding: '0.25rem 0', background: 'var(--bg-card-hover)', color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: '4px', cursor: 'pointer', fontSize: '0.7rem' }}
+                        style={{ flex: 1, padding: '0.35rem 0.15rem', background: 'var(--bg-card-hover)', color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: '4px', cursor: 'pointer', fontSize: '0.725rem', fontWeight: 600 }}
                       >
                         📷 Ganti
                       </button>

@@ -162,10 +162,10 @@ export default function TimemarkModule() {
   const currentActiveExport = exportDir || (singleDir ? `${singleDir}/03_photos_export` : '');
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', gap: '1rem', overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%', width: '100%', gap: '1rem', overflow: 'hidden' }}>
       
       {/* 5 Floating Pill Sub-Tabs Navigation Bar */}
-      <div className="floating-pill-container">
+      <div className="floating-pill-container" style={{ width: '100%' }}>
         {[
           { id: 'pipeline', label: '🚀 Pipeline Proses' },
           { id: 'gallery', label: '🖼️ Galeri & Edit Foto' },
@@ -185,7 +185,7 @@ export default function TimemarkModule() {
       </div>
 
       {/* SUB-TAB 1: PIPELINE PROSES */}
-      <div style={{ display: activeSubTab === 'pipeline' ? 'flex' : 'none', gap: '1.25rem', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+      <div style={{ display: activeSubTab === 'pipeline' ? 'flex' : 'none', gap: '1.25rem', flex: 1, width: '100%', minHeight: 0, overflow: 'hidden' }}>
         
         {/* Kolom Kiri: Form Konfigurasi Folder & Step */}
         <div style={{ flex: '0 0 490px', display: 'flex', flexDirection: 'column', gap: '1rem', overflowY: 'auto', paddingRight: '0.5rem' }}>
@@ -548,17 +548,17 @@ export default function TimemarkModule() {
       </div>
 
       {/* SUB-TAB 2: GALERI & EDIT FOTO */}
-      <div style={{ display: activeSubTab === 'gallery' ? 'flex' : 'none', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+      <div style={{ display: activeSubTab === 'gallery' ? 'flex' : 'none', flexDirection: 'column', flex: 1, width: '100%', minHeight: 0, overflow: 'hidden' }}>
         <GalleryPanel exportDir={currentActiveExport} onPickFolder={() => handlePickFolder(setExportDir, 'export')} />
       </div>
 
       {/* SUB-TAB 3: PROFIL PEGAWAI */}
-      <div style={{ display: activeSubTab === 'employee' ? 'flex' : 'none', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+      <div style={{ display: activeSubTab === 'employee' ? 'flex' : 'none', flexDirection: 'column', flex: 1, width: '100%', minHeight: 0, overflow: 'hidden' }}>
         <EmployeeManagerPanel />
       </div>
 
       {/* SUB-TAB 4: KOREKSI DOKUMEN */}
-      <div style={{ display: activeSubTab === 'correction' ? 'flex' : 'none', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+      <div style={{ display: activeSubTab === 'correction' ? 'flex' : 'none', flexDirection: 'column', flex: 1, width: '100%', minHeight: 0, overflow: 'hidden' }}>
         <CorrectionPanel
           targetDir={currentActiveTarget}
           onPickFolder={() => handlePickFolder(folderMode === 'single' ? setSingleDir : setTargetDir, folderMode === 'single' ? 'single' : 'target')}
@@ -566,7 +566,7 @@ export default function TimemarkModule() {
       </div>
 
       {/* SUB-TAB 5: EKSPOR EXCEL */}
-      <div style={{ display: activeSubTab === 'export' ? 'flex' : 'none', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+      <div style={{ display: activeSubTab === 'export' ? 'flex' : 'none', flexDirection: 'column', flex: 1, width: '100%', minHeight: 0, overflow: 'hidden' }}>
         <ExcelExportPanel targetDir={currentActiveTarget} exportDir={currentActiveExport} />
       </div>
 
