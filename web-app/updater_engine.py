@@ -12,7 +12,7 @@ import threading
 import subprocess
 import tempfile
 
-APP_VERSION = "1.6.5"
+APP_VERSION = "1.6.6"
 DEFAULT_UPDATE_URL = "https://update.sintelboo.my.id/version.json"
 
 _update_state = {
@@ -160,76 +160,119 @@ def apply_update_and_restart():
 
     current_pid = os.getpid()
 
-    cmd_file = os.path.join(tempfile.gettempdir(), "sintelis_updater.cmd")
+    ps1_file = os.path.join(tempfile.gettempdir(), "sintelis_updater.ps1")
     log_file = os.path.join(tempfile.gettempdir(), "sintelis_updater.log")
 
-    cmd_content = f"""@echo off
-setlocal
-set "TARGET={target_exe}"
-set "STANDARD={standard_exe}"
-set "TEMP_EXE={temp_exe}"
-set "LOG={log_file}"
+    target_esc = target_exe.replace("'", "''")
+    standard_esc = standard_exe.replace("'", "''")
+    temp_esc = temp_exe.replace("'", "''")
+    log_esc = log_file.replace("'", "''")
 
-echo ============================================== >> "%LOG%"
-echo [%date% %time%] Updater Sintelis Utility Dimulai >> "%LOG%"
-echo TARGET: "%TARGET%" >> "%LOG%"
-echo STANDARD: "%STANDARD%" >> "%LOG%"
-echo TEMP_EXE: "%TEMP_EXE%" >> "%LOG%"
+    ps1_content = f"""# Sintelis Utility In-Place Auto-Updater (PowerShell)
+$targetExe = '{target_esc}'
+$standardExe = '{standard_esc}'
+$tempExe = '{temp_esc}'
+$logFile = '{log_esc}'
+$callerPid = {current_pid}
 
-:: 1. Beri jeda 1 detik agar response HTTP selesai terkirim ke antarmuka
-timeout /t 1 /nobreak >nul
+function Log-Message([string]$msg) {{
+    $timestamp = (Get-Date).ToString("yyyy-MM-dd HH:mm:ss")
+    $line = "[$timestamp] $msg"
+    try {{
+        Add-Content -LiteralPath $logFile -Value $line -Encoding UTF8 -ErrorAction SilentlyContinue
+    }} catch {{}}
+}}
 
-:: 2. Matikan paksa PID pemanggil
-taskkill /F /PID {current_pid} >nul 2>&1
+Log-Message "=============================================="
+Log-Message "Updater Sintelis Utility Dimulai"
+Log-Message "TARGET: $targetExe"
+Log-Message "STANDARD: $standardExe"
+Log-Message "TEMP_EXE: $tempExe"
 
-:: 3. Matikan semua instance SintelisUtility untuk melepas seluruh kunci berkas di Windows
-taskkill /F /IM "SintelisUtility*.exe" >nul 2>&1
-timeout /t 2 /nobreak >nul
+# 1. Jeda 1.5 detik agar respon HTTP sukses terkirim ke antarmuka aplikasi
+Start-Sleep -Milliseconds 1500
 
-:: 4. Loop penimpaan berkas dengan verifikasi (maksimal 30 detik)
-set "COPIED=0"
-for /l %%i in (1,1,30) do (
-    copy /y "%TEMP_EXE%" "%TARGET%" >nul 2>&1
-    if not errorlevel 1 (
-        set "COPIED=1"
-        goto :after_copy
-    )
-    echo [%date% %time%] Mencoba menimpa berkas (percobaan %%i)... >> "%LOG%"
-    timeout /t 1 /nobreak >nul
-)
+# 2. Hentikan paksa proses SintelisUtility agar handle file terlepas
+try {{
+    Stop-Process -Id $callerPid -Force -ErrorAction SilentlyContinue
+}} catch {{}}
 
-:after_copy
-if "%COPIED%"=="1" (
-    echo [%date% %time%] Berkas target BERHASIL ditimpa! >> "%LOG%"
+try {{
+    Get-Process -Name "SintelisUtility*" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+}} catch {{}}
+
+Start-Sleep -Milliseconds 1000
+
+# 3. Loop mencoba menimpa berkas hingga 30 kali (maks 30 detik)
+$copied = $false
+for ($i = 1; $i -le 30; $i++) {{
+    try {{
+        Copy-Item -LiteralPath $tempExe -Destination $targetExe -Force -ErrorAction Stop
+        $copied = $true
+        break
+    }} catch {{
+        Log-Message ("Mencoba menimpa berkas (percobaan {0} gagal): {1}" -f $i, $_.Exception.Message)
+        Start-Sleep -Seconds 1
+    }}
+}}
+
+if ($copied) {{
+    Log-Message "Berkas target BERHASIL ditimpa!"
     
-    :: Jika target bukan nama standard SintelisUtility.exe, sinkronkan juga ke standard
-    if /i not "%TARGET%"=="%STANDARD%" (
-        copy /y "%TEMP_EXE%" "%STANDARD%" >nul 2>&1
-    )
+    # Sinkronkan juga jika target beda dari standard SintelisUtility.exe
+    if ($standardExe -and ($targetExe -ne $standardExe)) {{
+        try {{
+            Copy-Item -LiteralPath $tempExe -Destination $standardExe -Force -ErrorAction SilentlyContinue
+            Log-Message "Berkas standard juga disinkronkan: $standardExe"
+        }} catch {{}}
+    }}
     
-    :: Bersihkan berkas unduhan sementara di folder Temp
-    del /f /q "%TEMP_EXE%" >nul 2>&1
+    # Hapus file sementara di Temp
+    try {{
+        Remove-Item -LiteralPath $tempExe -Force -ErrorAction SilentlyContinue
+    }} catch {{}}
     
-    :: Jalankan aplikasi yang baru di-update
-    start "" "%TARGET%"
-    echo [%date% %time%] Aplikasi baru berhasil diluncurkan: "%TARGET%" >> "%LOG%"
-) else (
-    echo [%date% %time%] GAGAL menimpa berkas setelah 30 percobaan >> "%LOG%"
-)
+    # Jalankan aplikasi yang baru diperbarui
+    try {{
+        $targetDir = Split-Path -Parent $targetExe
+        Start-Process -FilePath $targetExe -WorkingDirectory $targetDir
+        Log-Message "Aplikasi baru berhasil diluncurkan: $targetExe"
+    }} catch {{
+        Log-Message ("Gagal menjalankan aplikasi baru: {0}" -f $_.Exception.Message)
+    }}
+}} else {{
+    Log-Message "GAGAL menimpa berkas target setelah 30 percobaan!"
+}}
 
-:: Hapus skrip updater ini sendiri
-del "%~f0" >nul 2>&1
+# Hapus skrip updater ini sendiri
+try {{
+    Remove-Item -LiteralPath $PSCommandPath -Force -ErrorAction SilentlyContinue
+}} catch {{}}
 """
 
-    with open(cmd_file, "w", encoding="cp1252", errors="replace") as f:
-        f.write(cmd_content)
+    with open(ps1_file, "w", encoding="utf-8") as f:
+        f.write(ps1_content)
 
-    # ShellExecuteW via os.startfile: sepenuhnya mandiri, di-spawn oleh Windows Explorer
-    # Tidak pernah mati saat SintelisUtility di-kill oleh taskkill!
+    # Jalankan PowerShell mandiri tanpa window (CREATE_NO_WINDOW = 0x08000000)
+    cmd = [
+        "powershell.exe",
+        "-NoProfile",
+        "-WindowStyle", "Hidden",
+        "-ExecutionPolicy", "Bypass",
+        "-File", ps1_file
+    ]
     try:
-        os.startfile(cmd_file)
+        subprocess.Popen(
+            cmd,
+            creationflags=0x08000000,
+            close_fds=True
+        )
     except Exception:
-        subprocess.Popen(["cmd.exe", "/c", cmd_file], creationflags=0x08000000, close_fds=True)
+        try:
+            os.startfile(ps1_file)
+        except Exception:
+            subprocess.Popen(cmd)
 
     threading.Thread(target=lambda: (time.sleep(1.2), os._exit(0)), daemon=True).start()
     return {"ok": True, "message": "Restarting application to apply update..."}
+

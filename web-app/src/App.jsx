@@ -699,7 +699,7 @@ export default function App() {
       <main className="app-main-workspace">
         {/* Bento Stats & Workspace Title Header */}
         <BentoHeader
-          currentVersion="v1.6.5"
+          currentVersion="v1.6.6"
           updateAvailable={updateAvailable}
           onOpenUpdateModal={() => setShowUpdateModal(true)}
           activePreset={activePresetName || "Standar (Resor 1.21 Bogor)"}
