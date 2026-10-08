@@ -104,7 +104,12 @@ def _parse_date(text: str) -> date | None:
 
 
 def load_mapping(path: Path) -> dict:
-    with open(path, encoding="utf-8") as f:
+    p = Path(path)
+    if not p.exists():
+        candidate = Path(__file__).parent / p.name
+        if candidate.exists():
+            p = candidate
+    with open(p, encoding="utf-8") as f:
         data = json.load(f)
     result = {}
     for asset_type, details in data.items():
@@ -118,7 +123,12 @@ def load_mapping(path: Path) -> dict:
 
 
 def load_data_acuan(path: Path) -> dict[int, dict]:
-    with open(path, encoding="utf-8") as f:
+    p = Path(path)
+    if not p.exists():
+        candidate = Path(__file__).parent / p.name
+        if candidate.exists():
+            p = candidate
+    with open(p, encoding="utf-8") as f:
         data = json.load(f)
     return {a["id"]: a for a in data["aset"]}
 

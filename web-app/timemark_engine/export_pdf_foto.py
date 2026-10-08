@@ -352,6 +352,10 @@ def sanitize_segment(text: str) -> str:
 
 
 def load_sap_mapping(path: str) -> dict:
+    if not path or not os.path.exists(path):
+        candidate = os.path.join(os.path.dirname(__file__), "sap_station_mapping.json")
+        if os.path.exists(candidate):
+            path = candidate
     try:
         with open(path, encoding="utf-8") as f:
             data = json.load(f)

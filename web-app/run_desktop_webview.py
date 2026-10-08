@@ -2640,6 +2640,9 @@ def _get_safe_webview_storage():
 
 
 def main():
+    import multiprocessing
+    multiprocessing.freeze_support()
+
     # ── CLI Script Dispatcher (Subprocess runner untuk PyInstaller frozen binary) ──
     if len(sys.argv) > 1:
         first_arg = sys.argv[1]
@@ -2656,6 +2659,11 @@ def main():
                 candidate = os.path.join(ENGINE_DIR, target_script)
                 if os.path.isfile(candidate):
                     target_script = candidate
+            elif not os.path.isfile(target_script):
+                candidate = os.path.join(ENGINE_DIR, os.path.basename(target_script))
+                if os.path.isfile(candidate):
+                    target_script = candidate
+
             if os.path.isfile(target_script):
                 import runpy
                 if ENGINE_DIR not in sys.path:
@@ -2694,7 +2702,7 @@ def main():
     print("[OK] Opening desktop window...")
 
     webview.create_window(
-        "Sintelis Utility 2.0 (v1.6.0)",
+        "Sintelis Utility 2.0 (v1.6.1)",
         f"http://localhost:{PORT}",
         width=1400,
         height=900,

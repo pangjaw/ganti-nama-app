@@ -33,7 +33,7 @@ state = {
     "active_process": None
 }
 
-_state_lock = threading.Lock()
+_state_lock = threading.RLock()
 
 def add_log(log_type, msg):
     ts = time.strftime("%H:%M:%S")
@@ -60,14 +60,14 @@ def cancel_pipeline():
     with _state_lock:
         state["cancelled"] = True
         state["running"] = False
-        add_log("warn", "🛑 Menghentikan pipeline...")
         proc = state.get("active_process")
-        if proc and proc.poll() is None:
-            try:
-                proc.terminate()
-                add_log("info", "Proses aktif berhasil dihentikan.")
-            except Exception as e:
-                add_log("error", f"Gagal menghentikan proses: {e}")
+    add_log("warn", "🛑 Menghentikan pipeline...")
+    if proc and proc.poll() is None:
+        try:
+            proc.terminate()
+            add_log("info", "Proses aktif berhasil dihentikan.")
+        except Exception as e:
+            add_log("error", f"Gagal menghentikan proses: {e}")
 
 def run_cmd(cmd_list, step_key, step_name):
     with _state_lock:
@@ -75,16 +75,19 @@ def run_cmd(cmd_list, step_key, step_name):
             return False
         state["step_statuses"][step_key] = "running"
         state["step_name"] = step_name
-        add_log("info", f"🚀 Memulai {step_name}...")
+    add_log("info", f"🚀 Memulai {step_name}...")
 
     try:
         env = os.environ.copy()
         env["PYTHONUNBUFFERED"] = "1"
+        env["PYTHONIOENCODING"] = "utf-8"
         proc = subprocess.Popen(
             cmd_list,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             bufsize=1,
             env=env,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
@@ -173,6 +176,13 @@ def _execute_pipeline_task(source_dir, target_dir, export_dir, merged_dir, selec
         os.makedirs(temp_merge_dir, exist_ok=True)
         actual_step5_output = temp_merge_dir
 
+    is_frozen = getattr(sys, 'frozen', False)
+    def make_cmd(script_name, script_args):
+        if is_frozen:
+            return [py_exe, "--run-script", script_name] + script_args
+        else:
+            return [py_exe, os.path.join(ENGINE_DIR, script_name)] + script_args
+
     try:
         # STEP 1: Ekstraksi Foto
         if "1" in steps_to_run:
@@ -180,12 +190,11 @@ def _execute_pipeline_task(source_dir, target_dir, export_dir, merged_dir, selec
             with _state_lock:
                 state["current_step"] = 1
                 state["progress"] = int((step_idx - 1) / total_steps * 100)
-            cmd = [
-                py_exe, "--run-script", os.path.join(ENGINE_DIR, "export_pdf_foto.py"),
+            cmd = make_cmd("export_pdf_foto.py", [
                 "--input", source_dir,
                 "--output", export_dir,
                 "--sap-mapping", sap_mapping
-            ]
+            ])
             ok = run_cmd(cmd, "step1", f"Step 1: Ekstraksi Foto ({'PDF Sumber' if mode == 'single' else 'PDF 2026'})")
             if not ok:
                 return
@@ -196,11 +205,10 @@ def _execute_pipeline_task(source_dir, target_dir, export_dir, merged_dir, selec
             with _state_lock:
                 state["current_step"] = 2
                 state["progress"] = int((step_idx - 1) / total_steps * 100)
-            cmd = [
-                py_exe, "--run-script", os.path.join(ENGINE_DIR, "extract_pdf_dates.py"),
+            cmd = make_cmd("extract_pdf_dates.py", [
                 "--pdf-dir", target_dir,
                 "--output-dir", export_dir
-            ]
+            ])
             ok = run_cmd(cmd, "step2", f"Step 2: Ekstraksi Tanggal ({'PDF Sumber' if mode == 'single' else 'PDF Target 2025'})")
             if not ok:
                 return
@@ -211,14 +219,13 @@ def _execute_pipeline_task(source_dir, target_dir, export_dir, merged_dir, selec
             with _state_lock:
                 state["current_step"] = 3
                 state["progress"] = int((step_idx - 1) / total_steps * 100)
-            cmd = [
-                py_exe, "--run-script", os.path.join(ENGINE_DIR, "scheduler.py"),
+            cmd = make_cmd("scheduler.py", [
                 "--pdf-dir", target_dir,
                 "--photos-dir", export_dir,
                 "--mapping", time_mapping,
                 "--data-acuan", data_acuan,
                 "--output", schedule_file
-            ]
+            ])
             ok = run_cmd(cmd, "step3", "Step 3: Penjadwalan Tim & Alokasi Waktu")
             if not ok:
                 return
@@ -229,13 +236,12 @@ def _execute_pipeline_task(source_dir, target_dir, export_dir, merged_dir, selec
             with _state_lock:
                 state["current_step"] = 4
                 state["progress"] = int((step_idx - 1) / total_steps * 100)
-            cmd = [
-                py_exe, "--run-script", os.path.join(ENGINE_DIR, "edit_timemark_ide1.py"),
+            cmd = make_cmd("edit_timemark_ide1.py", [
                 "--input", export_dir,
                 "--output", edited_photos_dir,
                 "--schedule", schedule_file,
                 "--detector", "guide"
-            ]
+            ])
             ok = run_cmd(cmd, "step4", "Step 4: Edit Watermark Timemark Foto")
             if not ok:
                 return
@@ -269,12 +275,11 @@ def _execute_pipeline_task(source_dir, target_dir, export_dir, merged_dir, selec
                         add_log("warn", f"Gagal mencadangkan {p.name}: {be}")
                 add_log("success", f"✓ {len(all_pdfs)} berkas PDF berhasil dicadangkan dengan aman.")
 
-            cmd = [
-                py_exe, "--run-script", os.path.join(ENGINE_DIR, "merge_pdf_foto.py"),
+            cmd = make_cmd("merge_pdf_foto.py", [
                 "--input", target_dir,
                 "--photos", edited_photos_dir,
                 "--output", actual_step5_output
-            ]
+            ])
             ok = run_cmd(cmd, "step5", "Step 5: Penggabungan PDF Final A4")
             if not ok:
                 return
