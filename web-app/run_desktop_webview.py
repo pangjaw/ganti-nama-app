@@ -39,6 +39,14 @@ ENGINE_DIR = os.path.join(BUNDLE_DIR, "timemark_engine")
 if not os.path.isdir(ENGINE_DIR):
     ENGINE_DIR = os.path.join(BASE_DIR, "timemark_engine")
 
+def make_script_cmd(script_name, script_args):
+    is_frozen = getattr(sys, 'frozen', False)
+    if is_frozen:
+        return [sys.executable, "--run-script", os.path.basename(script_name)] + script_args
+    else:
+        script_path = os.path.join(ENGINE_DIR, os.path.basename(script_name))
+        return [sys.executable, script_path] + script_args
+
 def get_tesseract_cmd():
     candidates = [
         os.path.join(BUNDLE_DIR, "tesseract", "tesseract.exe"),
@@ -2019,16 +2027,17 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
             with open(date_file, "w", encoding="utf-8") as df:
                 df.write(new_date + "\n")
 
-            cmd = [
-                sys.executable,
-                "--run-script",
-                os.path.join(ENGINE_DIR, "edit_timemark_ide1.py"),
+            sub_env = os.environ.copy()
+            sub_env["PYTHONUNBUFFERED"] = "1"
+            sub_env["PYTHONIOENCODING"] = "utf-8"
+
+            cmd = make_script_cmd("edit_timemark_ide1.py", [
                 "--input", target_folder,
                 "--date", new_date,
                 "--detector", "guide"
-            ]
+            ])
             subprocess.run(
-                cmd, capture_output=True, text=True, cwd=BASE_DIR,
+                cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", env=sub_env, cwd=BASE_DIR,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
             )
             self._json({"ok": True, "message": "Waktu timemark berhasil diperbarui."})
@@ -2051,16 +2060,17 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
                 self._json({"ok": False, "error": "Berkas foto tidak ditemukan."}, 404)
                 return
 
-            cmd = [
-                sys.executable,
-                "--run-script",
-                os.path.join(ENGINE_DIR, "edit_timemark_ide1.py"),
+            sub_env = os.environ.copy()
+            sub_env["PYTHONUNBUFFERED"] = "1"
+            sub_env["PYTHONIOENCODING"] = "utf-8"
+
+            cmd = make_script_cmd("edit_timemark_ide1.py", [
                 "--input", target_photo,
                 "--y-override", str(y_override),
                 "--detector", "guide"
-            ]
+            ])
             subprocess.run(
-                cmd, capture_output=True, text=True, cwd=BASE_DIR,
+                cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", env=sub_env, cwd=BASE_DIR,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
             )
             self._json({"ok": True, "message": f"Koordinat y={y_override} berhasil diterapkan."})
@@ -2095,15 +2105,16 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
             with open(target_photo, "wb") as pf:
                 pf.write(raw_bytes)
 
-            cmd = [
-                sys.executable,
-                "--run-script",
-                os.path.join(ENGINE_DIR, "edit_timemark_ide1.py"),
+            sub_env = os.environ.copy()
+            sub_env["PYTHONUNBUFFERED"] = "1"
+            sub_env["PYTHONIOENCODING"] = "utf-8"
+
+            cmd = make_script_cmd("edit_timemark_ide1.py", [
                 "--input", target_photo,
                 "--detector", "guide"
-            ]
+            ])
             subprocess.run(
-                cmd, capture_output=True, text=True, cwd=BASE_DIR,
+                cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", env=sub_env, cwd=BASE_DIR,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
             )
             self._json({"ok": True, "message": "Foto berhasil diganti dan di-watermark ulang."})
@@ -2123,18 +2134,19 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
                 self._json({"ok": False, "error": "Folder PDF tidak valid."}, 400)
                 return
 
-            cmd = [
-                sys.executable,
-                "--run-script",
-                os.path.join(ENGINE_DIR, "correct_serat_optik_cores.py"),
+            sub_env = os.environ.copy()
+            sub_env["PYTHONUNBUFFERED"] = "1"
+            sub_env["PYTHONIOENCODING"] = "utf-8"
+
+            cmd = make_script_cmd("correct_serat_optik_cores.py", [
                 "--folders", folder,
                 "--json"
-            ]
+            ])
             if apply_corr:
                 cmd.append("--apply")
 
             res = subprocess.run(
-                cmd, capture_output=True, text=True, cwd=BASE_DIR,
+                cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", env=sub_env, cwd=BASE_DIR,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
             )
             items = []
@@ -2163,15 +2175,16 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
                 self._json({"ok": False, "error": "Folder PDF tidak valid."}, 400)
                 return
 
-            cmd = [
-                sys.executable,
-                "--run-script",
-                os.path.join(ENGINE_DIR, "audit_and_correct_personnel.py"),
+            sub_env = os.environ.copy()
+            sub_env["PYTHONUNBUFFERED"] = "1"
+            sub_env["PYTHONIOENCODING"] = "utf-8"
+
+            cmd = make_script_cmd("audit_and_correct_personnel.py", [
                 "--folder", folder,
                 "--action", action
-            ]
+            ])
             res = subprocess.run(
-                cmd, capture_output=True, text=True, cwd=BASE_DIR,
+                cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", env=sub_env, cwd=BASE_DIR,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
             )
             report = {}
@@ -2182,6 +2195,10 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
                     match = re.search(r'\{.*\}', res.stdout, re.DOTALL)
                     if match:
                         report = json.loads(match.group(0))
+
+            if not report and res.stderr:
+                _log(f"Audit personil stderr: {res.stderr}")
+                report = {"error": res.stderr.strip()}
 
             self._json({"ok": True, "result": report})
         except Exception as e:
@@ -2702,7 +2719,7 @@ def main():
     print("[OK] Opening desktop window...")
 
     webview.create_window(
-        "Sintelis Utility 2.0 (v1.6.1)",
+        "Sintelis Utility 2.0 (v1.6.2)",
         f"http://localhost:{PORT}",
         width=1400,
         height=900,

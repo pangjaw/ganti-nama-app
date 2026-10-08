@@ -8,6 +8,11 @@ from pathlib import Path
 from datetime import datetime
 import argparse
 
+if hasattr(sys.stdout, 'reconfigure'):
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+if hasattr(sys.stderr, 'reconfigure'):
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+
 import fitz
 
 # Ensure scripts folder is on path
@@ -57,8 +62,16 @@ def extract_page_ocr_text(page: fitz.Page) -> str:
         from PIL import Image
         import io
 
-        tesseract_bin = Path(r"C:\Program Files\Tesseract-OCR\tesseract.exe")
-        if tesseract_bin.is_file():
+        candidates = [
+            os.environ.get("TESSERACT_CMD"),
+            r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+            r"C:\Program Files (x86)\Tesseract-OCR\tesseract.exe",
+        ]
+        tesseract_bin = next((c for c in candidates if c and os.path.isfile(c)), None)
+        if not tesseract_bin:
+            import shutil
+            tesseract_bin = shutil.which("tesseract")
+        if tesseract_bin:
             pytesseract.pytesseract.tesseract_cmd = str(tesseract_bin)
 
         pix = page.get_pixmap(dpi=150)
@@ -694,13 +707,19 @@ def auto_correct_files(folder_path: Path, target_file_names: list = None, pegawa
                 except Exception as e:
                     failed.append({'file': f_info['file'], 'error': str(e)})
 
+    post_audit = audit_folder(folder_path, cfg)
     return {
         'total_scanned': len(all_files),
         'total_attempted': len(corrected) + len(failed),
         'total_corrected': len(corrected),
         'total_failed': len(failed),
         'corrected': corrected,
-        'failed': failed
+        'failed': failed,
+        'summary': post_audit.get('summary'),
+        'total_files': post_audit.get('total_files'),
+        'ok_count': post_audit.get('ok_count'),
+        'critical_count': post_audit.get('critical_count'),
+        'files': post_audit.get('files')
     }
 
 
@@ -744,12 +763,19 @@ def auto_correct_no_sc_files(folder_path: Path, pegawai_cfg: dict = None):
                 failed.append({'file': info['file'], 'error': '; '.join(reasons)})
         except Exception as exc:
             failed.append({'file': info['file'], 'error': str(exc)})
+    post_audit = audit_folder(folder_path, cfg)
     return {
+        'total_scanned': len(audit_res.get('files', [])),
         'total_sc_attempted': len(targets),
         'total_sc_corrected': len(corrected),
         'total_sc_failed': len(failed),
         'corrected': corrected,
-        'failed': failed
+        'failed': failed,
+        'summary': post_audit.get('summary'),
+        'total_files': post_audit.get('total_files'),
+        'ok_count': post_audit.get('ok_count'),
+        'critical_count': post_audit.get('critical_count'),
+        'files': post_audit.get('files')
     }
 
 

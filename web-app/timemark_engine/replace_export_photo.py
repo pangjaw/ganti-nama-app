@@ -36,15 +36,22 @@ def run_step4_auto(rel_path: str, mode: str, detector: str = "google_vision"):
     folder_abs = PHOTOS_EXPORT / folder_rel
     file_abs = PHOTOS_EXPORT / norm_rel
 
+    engine_dir = Path(__file__).resolve().parent
     if mode == "jam":
-        script = APP_DIR / "scripts" / "edit_photo_time_only.py"
+        script = engine_dir / "edit_photo_time_only.py"
+        if not script.exists():
+            script = APP_DIR / "scripts" / "edit_photo_time_only.py"
         cmd = [sys.executable, "--run-script", str(script), "--input", norm_rel]
     elif mode == "koordinat":
-        script = APP_DIR / "scripts" / "edit_photo_coordinate_only.py"
+        script = engine_dir / "edit_photo_coordinate_only.py"
+        if not script.exists():
+            script = APP_DIR / "scripts" / "edit_photo_coordinate_only.py"
         cmd = [sys.executable, "--run-script", str(script), "--input", norm_rel]
     else:
         # Default: mode tanggal (edit_timemark_ide1.py)
-        script = APP_DIR / "scripts" / "edit_timemark_ide1.py"
+        script = engine_dir / "edit_timemark_ide1.py"
+        if not script.exists():
+            script = APP_DIR / "scripts" / "edit_timemark_ide1.py"
         cmd = [sys.executable, "--run-script", str(script), "--input", str(folder_abs)]
         if detector == "google_vision":
             cmd.extend(["--detector", "google_vision"])

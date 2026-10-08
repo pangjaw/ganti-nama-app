@@ -45,16 +45,25 @@ FONT_SIZE = 7.202
 
 def ensure_font():
     """Pastikan font DejaVuSans.ttf tersedia di folder config/."""
-    if not FONT_PATH.exists():
-        # Coba salin dari matplotlib jika ada
-        try:
-            import matplotlib
-            mpl_font = Path(matplotlib.__file__).parent / "mpl-data" / "fonts" / "ttf" / "DejaVuSans.ttf"
-            if mpl_font.exists():
-                CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-                shutil.copyfile(str(mpl_font), str(FONT_PATH))
-        except Exception:
-            pass
+    global FONT_PATH
+    if FONT_PATH.exists():
+        return
+    candidates = [
+        Path(__file__).resolve().parent / "DejaVuSans.ttf",
+        Path(__file__).resolve().parent / "DejaVuSans-Bold.ttf",
+    ]
+    for c in candidates:
+        if c.exists():
+            FONT_PATH = c
+            return
+    try:
+        import matplotlib
+        mpl_font = Path(matplotlib.__file__).parent / "mpl-data" / "fonts" / "ttf" / "DejaVuSans.ttf"
+        if mpl_font.exists():
+            CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(str(mpl_font), str(FONT_PATH))
+    except Exception:
+        pass
 
 
 def is_serat_optik_file(path: Path) -> bool:
