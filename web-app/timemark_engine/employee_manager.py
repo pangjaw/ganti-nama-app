@@ -20,28 +20,24 @@ CONFIG_PATH = Path("config/daftar_pegawai.json")
 
 
 def load_pegawai_config(config_path: Path | str = None) -> dict:
-    """Loads KAUR and PNC master data from config/daftar_pegawai.json or %LOCALAPPDATA%."""
-    p = Path(config_path) if config_path else None
-    if not p or not p.exists():
-        local_app = os.environ.get("LOCALAPPDATA")
-        if local_app:
-            appdata_p = Path(local_app) / "SintelisUtility" / "daftar_pegawai.json"
-            if appdata_p.exists():
-                p = appdata_p
+    """Loads KAUR and PNC master data from active config or config/daftar_pegawai.json."""
+    p = None
+    if config_path and Path(config_path).exists():
+        p = Path(config_path)
+    else:
+        candidates = [
+            Path("temp_active_pegawai.json"),
+            Path(os.environ.get("LOCALAPPDATA", "")) / "SintelisUtility" / "daftar_pegawai.json",
+            CONFIG_PATH,
+            Path(__file__).parent.parent / "config" / "daftar_pegawai.json",
+            Path(__file__).parent / "daftar_pegawai.json",
+        ]
+        for cand in candidates:
+            if cand.is_file() and cand.stat().st_size > 10:
+                p = cand
+                break
 
-    if not p or not p.exists():
-        p = CONFIG_PATH
-        if not p.exists():
-            # Fallback search
-            alt_p = Path(__file__).parent.parent / "config" / "daftar_pegawai.json"
-            if alt_p.exists():
-                p = alt_p
-            else:
-                engine_p = Path(__file__).parent / "daftar_pegawai.json"
-                if engine_p.exists():
-                    p = engine_p
-
-    if p.exists():
+    if p and p.exists():
         try:
             with open(p, "r", encoding="utf-8") as f:
                 data = json.load(f)

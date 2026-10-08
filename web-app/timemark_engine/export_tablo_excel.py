@@ -273,7 +273,7 @@ def match_asset_to_tablo_group(item: dict) -> int:
     return 0
 
 
-def generate_tablo_workbook(schedule_data: dict, year: int = None, month: int = None, output_path: Path = None, config: dict = None, config_path: Path = None) -> str:
+def generate_tablo_workbook(schedule_data: dict, year: int = None, month: int = None, output_path: Path = None, config: dict = None, config_path: Path = None, pdf_dir: Path | str = None) -> str:
     schedules = schedule_data.get("schedules", [])
 
     # 1. Detect Year and Month if not provided
@@ -386,9 +386,13 @@ def generate_tablo_workbook(schedule_data: dict, year: int = None, month: int = 
         except Exception:
             continue
 
-    # Pre-scan Tim 1 personnel from available PDFs in 01_pdf_source or 02_pdf_target if available
+    # Pre-scan Tim 1 personnel from available PDFs in pdf_dir, 01_pdf_source or 02_pdf_target if available
     pdf_by_date = {}
-    for search_dir in [Path("01_pdf_source"), Path("02_pdf_target")]:
+    search_dirs = []
+    if pdf_dir and Path(pdf_dir).exists():
+        search_dirs.append(Path(pdf_dir))
+    search_dirs.extend([Path("01_pdf_source"), Path("02_pdf_target")])
+    for search_dir in search_dirs:
         if search_dir.exists():
             for pdf_file in search_dir.rglob("*.pdf"):
                 m = re.search(r'(\d{2})-(\d{2})-(\d{4})', pdf_file.name)
@@ -397,100 +401,113 @@ def generate_tablo_workbook(schedule_data: dict, year: int = None, month: int = 
                     if d_str not in pdf_by_date:
                         pdf_by_date[d_str] = pdf_file
 
+    def _match_token_to_key(tok_str: str) -> str | None:
+        tok = str(tok_str).strip().upper()
+        clean_tok = re.sub(r'[^A-Z]', '', tok)
+        if not clean_tok:
+            return None
+        for p in personnel_list[1:]:
+            p_u = p["nama"].upper()
+            clean_p = re.sub(r'[^A-Z]', '', p_u)
+            if clean_p and clean_tok and (clean_p == clean_tok or (len(clean_p) >= 6 and clean_p in clean_tok) or (len(clean_tok) >= 6 and clean_tok in clean_p)):
+                return p["key"]
+            chars = [re.escape(c) for c in p_u if not c.isspace()]
+            if chars and re.search(r'\b' + r'\s*'.join(chars) + r'\b', tok):
+                return p["key"]
+            if any(part in tok for part in p_u.split() if len(part) > 3):
+                return p["key"]
+        return None
+
     # Build matrix rows: day -> dict {person_key: cell_value}
     matrix_data = {}
     for day in range(1, num_days + 1):
         d_str = f"{day:02d}-{month:02d}-{year}"
         iso_str = f"{year:04d}-{month:02d}-{day:02d}"
-        t1_tokens = set()
 
-        # 1. Dari data schedule (override atau hasil koreksi audit)
-        for s in schedules:
-            if s.get("iso_date") == iso_str:
+        person_groups = {p["key"]: set() for p in personnel_list}
+        all_day_groups = set()
+
+        # 1. Kumpulkan seluruh aset pada tanggal ini dan cocokkan personilnya
+        entries_today = [s for s in schedules if s.get("iso_date") == iso_str]
+
+        for s in entries_today:
+            grp = match_asset_to_tablo_group(s)
+            if grp > 0:
+                all_day_groups.add(grp)
+                entry_tokens = []
                 if s.get("personnel_override"):
                     for name in re.split(r"[,;\n]+", str(s["personnel_override"])):
                         if name.strip():
-                            t1_tokens.add(name.strip().upper())
+                            entry_tokens.append(name.strip().upper())
                 if s.get("personnel"):
-                    for p in s["personnel"]:
-                        if str(p).strip():
-                            t1_tokens.add(str(p).strip().upper())
+                    for p_item in s["personnel"]:
+                        if str(p_item).strip():
+                            entry_tokens.append(str(p_item).strip().upper())
 
-        # 2. Dari PDF bila tersedia dan belum ada token
-        if (len(daily_tim1_files[day]) > 0 or len(daily_tim2_files[day]) > 0) and d_str in pdf_by_date:
+                for tok in entry_tokens:
+                    pkey = _match_token_to_key(tok)
+                    if pkey:
+                        person_groups[pkey].add(grp)
+
+        # 2. Jika belum ada personil terpetakan sama sekali dari schedule, coba scan dari PDF jika ada
+        any_assigned = any(len(grps) > 0 for k, grps in person_groups.items() if k != "resor")
+        if (len(daily_tim1_files[day]) > 0 or len(daily_tim2_files[day]) > 0) and not any_assigned and d_str in pdf_by_date:
             try:
                 doc = fitz.open(pdf_by_date[d_str])
-                t1_tokens.update(extract_page1_tim1_personnel(doc))
+                pdf_tokens = extract_page1_tim1_personnel(doc)
                 doc.close()
+                for tok in pdf_tokens:
+                    pkey = _match_token_to_key(tok)
+                    if pkey:
+                        t1_grps = daily_tim1_groups.get(day, set())
+                        person_groups[pkey].update(t1_grps or all_day_groups)
             except Exception:
                 pass
 
-        t1_keys = set()
-        t2_keys = set()
-
-        # Cocokkan tokens dengan daftar personil aktif (lewati index 0 / resor)
-        if t1_tokens:
-            for p in personnel_list[1:]:
-                p_u = p["nama"].upper()
-                clean_p = re.sub(r'[^A-Z]', '', p_u)
-                matched = False
-                for tok in t1_tokens:
-                    clean_tok = re.sub(r'[^A-Z]', '', tok)
-                    if clean_p and clean_tok and (clean_p == clean_tok or (len(clean_p) >= 6 and clean_p in clean_tok) or (len(clean_tok) >= 6 and clean_tok in clean_p)):
-                        matched = True
-                        break
-                    chars = [re.escape(c) for c in p_u if not c.isspace()]
-                    if chars and re.search(r'\b' + r'\s*'.join(chars) + r'\b', tok):
-                        matched = True
-                        break
-                    if any(part in tok for part in p_u.split() if len(part) > 3):
-                        matched = True
-                        break
-                if matched:
-                    t1_keys.add(p["key"])
-
-        # Fallback deterministic roster jika tidak ada token PDF
-        if not t1_keys:
+        # 3. Fallback deterministic roster HANYA jika hari tersebut memiliki aset tetapi SAMA SEKALI tidak ada personil yang tercatat
+        any_assigned = any(len(grps) > 0 for k, grps in person_groups.items() if k != "resor")
+        if all_day_groups and not any_assigned:
             all_kaurs = [p for p in personnel_list if p.get("role") == "KAUR"]
             all_pncs = [p for p in personnel_list if p.get("role") == "PNC"]
+            t1_k = set()
+            t2_k = set()
             if all_kaurs:
                 k_idx = (day - 1) % len(all_kaurs)
-                t1_keys.add(all_kaurs[k_idx]["key"])
+                t1_k.add(all_kaurs[k_idx]["key"])
                 for k in all_kaurs:
-                    if k["key"] not in t1_keys:
-                        t2_keys.add(k["key"])
+                    if k["key"] not in t1_k:
+                        t2_k.add(k["key"])
             if len(all_pncs) >= 2:
                 p_shift = ((day - 1) * 2) % len(all_pncs)
                 pnc_t1 = [all_pncs[p_shift % len(all_pncs)], all_pncs[(p_shift + 1) % len(all_pncs)]]
                 for p in pnc_t1:
-                    t1_keys.add(p["key"])
+                    t1_k.add(p["key"])
                 for p in all_pncs:
-                    if p["key"] not in t1_keys:
-                        t2_keys.add(p["key"])
-        else:
-            for p in personnel_list[1:]:
-                if p["key"] not in t1_keys:
-                    t2_keys.add(p["key"])
+                    if p["key"] not in t1_k:
+                        t2_k.add(p["key"])
 
-        t1_str = "/".join(str(g) for g in sorted(daily_tim1_groups[day]))
-        t2_str = "/".join(str(g) for g in sorted(daily_tim2_groups[day]))
+            t1_grps = daily_tim1_groups.get(day, set())
+            t2_grps = daily_tim2_groups.get(day, set())
+            for k in t1_k:
+                person_groups[k].update(t1_grps or all_day_groups)
+            for k in t2_k:
+                person_groups[k].update(t2_grps)
 
         day_values = {}
         # Resor (KUPT) schedule: selalu dinas jika ada perawatan, atau dinas kantor 'P'
         resor_key = personnel_list[0]["key"]
-        if t1_str:
-            day_values[resor_key] = t1_str
-        elif t2_str:
-            day_values[resor_key] = t2_str
+        t1_grps = daily_tim1_groups.get(day, set())
+        if t1_grps:
+            day_values[resor_key] = "/".join(str(g) for g in sorted(t1_grps))
+        elif all_day_groups:
+            day_values[resor_key] = "/".join(str(g) for g in sorted(all_day_groups))
         else:
             day_values[resor_key] = "P"
 
         for p in personnel_list[1:]:
             pkey = p["key"]
-            if pkey in t1_keys and t1_str:
-                day_values[pkey] = t1_str
-            elif pkey in t2_keys and t2_str:
-                day_values[pkey] = t2_str
+            if person_groups[pkey]:
+                day_values[pkey] = "/".join(str(g) for g in sorted(person_groups[pkey]))
             else:
                 day_values[pkey] = "P"
 

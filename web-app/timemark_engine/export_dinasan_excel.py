@@ -753,14 +753,9 @@ def main():
     sch_path = Path(args.schedule)
     cfg_path = Path(args.config)
     if not cfg_path.exists():
-        local_app = os.environ.get("LOCALAPPDATA")
-        cand_app = Path(local_app) / "SintelisUtility" / "daftar_pegawai.json" if local_app else None
-        if cand_app and cand_app.exists():
-            cfg_path = cand_app
-        else:
-            cand_cfg = Path(__file__).resolve().parent / "daftar_pegawai.json"
-            if cand_cfg.exists():
-                cfg_path = cand_cfg
+        cand_cfg = Path(__file__).resolve().parent / "daftar_pegawai.json"
+        if cand_cfg.exists():
+            cfg_path = cand_cfg
 
     if args.folder and Path(args.folder).exists():
         custom_pdf_dir = Path(args.folder).resolve()

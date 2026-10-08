@@ -2266,7 +2266,8 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
                 month=int(month) if month else None,
                 output_path=out_dir,
                 config=active_cfg,
-                config_path=Path(active_cfg_path) if active_cfg_path else None
+                config_path=Path(active_cfg_path) if active_cfg_path else None,
+                pdf_dir=folder
             )
             _log(f"Export Tablo success: {file_path}")
             self._json({"ok": True, "filePath": str(file_path)})
@@ -2688,7 +2689,7 @@ def main():
     print("[OK] Opening desktop window...")
 
     webview.create_window(
-        "Sintelis Utility 2.0 (v1.5.7)",
+        "Sintelis Utility 2.0 (v1.5.8)",
         f"http://localhost:{PORT}",
         width=1400,
         height=900,
