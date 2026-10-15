@@ -1606,6 +1606,8 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
             self._handle_timemark_photo_file(parsed)
         elif parsed.path == "/api/timemark/pegawai":
             self._handle_timemark_pegawai_get()
+        elif parsed.path == "/api/version":
+            self._json({"version": updater_engine.APP_VERSION, "name": "Sintelis Utility"})
         elif parsed.path == "/api/update/check":
             qs = urllib.parse.parse_qs(parsed.query)
             custom_url = qs.get("url", [None])[0]

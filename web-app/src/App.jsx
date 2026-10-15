@@ -38,6 +38,8 @@ export default function App() {
   const [paused, setPaused] = useState(false);
   const [errorFileNames, setErrorFileNames] = useState([]);
   const [failedSaveItems, setFailedSaveItems] = useState([]);
+  const [currentVersion, setCurrentVersion] = useState('v1.6.8');
+  const [serverVersion, setServerVersion] = useState(null);
   const [updateAvailable, setUpdateAvailable] = useState(false);
   const [activePresetName, setActivePresetName] = useState('');
   const logEndRef = useRef();
@@ -47,12 +49,34 @@ export default function App() {
   const resumeRef = useRef(null);
   const processRef = useRef(null); // ref ke handleProcess agar handleRetryErrors tidak stale
 
-  // Sinkronisasi update status & preset aktif
+  // Sinkronisasi update status, versi biner aktif, & preset aktif
   useEffect(() => {
+    // 1. Ambil versi biner aplikasi yang sedang berjalan secara instan dari backend
+    fetch('/api/version')
+      .then(r => r.json())
+      .then(d => {
+        if (d && d.version) {
+          const v = d.version.startsWith('v') ? d.version : `v${d.version}`;
+          setCurrentVersion(v);
+        }
+      })
+      .catch(() => {});
+
+    // 2. Cek status update dari server Cloudflare
     fetch('/api/update/check')
       .then(r => r.json())
       .then(d => {
-        if (d && d.updateAvailable) setUpdateAvailable(true);
+        if (d) {
+          if (d.currentVersion) {
+            const v = d.currentVersion.startsWith('v') ? d.currentVersion : `v${d.currentVersion}`;
+            setCurrentVersion(v);
+          }
+          if (d.serverVersion) {
+            const sv = d.serverVersion.startsWith('v') ? d.serverVersion : `v${d.serverVersion}`;
+            setServerVersion(sv);
+          }
+          if (d.updateAvailable) setUpdateAvailable(true);
+        }
       })
       .catch(() => {});
 
@@ -700,7 +724,8 @@ export default function App() {
       <main className="app-main-workspace">
         {/* Bento Stats & Workspace Title Header */}
         <BentoHeader
-          currentVersion="v1.6.8"
+          currentVersion={currentVersion}
+          serverVersion={serverVersion}
           updateAvailable={updateAvailable}
           onOpenUpdateModal={() => setShowUpdateModal(true)}
           activePreset={activePresetName || "Standar (Resor 1.21 Bogor)"}
@@ -712,7 +737,17 @@ export default function App() {
           <UpdateBanner
             onOpenModal={() => setShowUpdateModal(true)}
             onAutoOpen={(data) => {
-              if (data && data.updateAvailable) setUpdateAvailable(true);
+              if (data) {
+                if (data.currentVersion) {
+                  const v = data.currentVersion.startsWith('v') ? data.currentVersion : `v${data.currentVersion}`;
+                  setCurrentVersion(v);
+                }
+                if (data.serverVersion) {
+                  const sv = data.serverVersion.startsWith('v') ? data.serverVersion : `v${data.serverVersion}`;
+                  setServerVersion(sv);
+                }
+                if (data.updateAvailable) setUpdateAvailable(true);
+              }
               setShowUpdateModal(true);
             }}
           />

@@ -3,6 +3,7 @@ import React from 'react';
 export default function BentoHeader({
   activePreset = 'Standar (Resor 1.21 Bogor)',
   currentVersion = 'v1.6.8',
+  serverVersion = null,
   updateAvailable = false,
   onOpenUpdateModal = null,
   mainTab = 'ocr',
@@ -91,7 +92,7 @@ export default function BentoHeader({
               : 'var(--bg-card)',
             transition: 'all 0.3s ease'
           }}
-          title={updateAvailable ? 'Versi baru tersedia! Klik untuk memperbarui.' : 'Versi aplikasi saat ini. Klik untuk periksa pembaruan.'}
+          title={updateAvailable ? `Versi aktif: ${currentVersion}. Versi baru ${serverVersion || ''} tersedia! Klik untuk memperbarui.` : `Versi aktif: ${currentVersion} (Terkini). Klik untuk periksa pembaruan.`}
         >
           <div className="bento-card-top">
             <span className="bento-card-label" style={{ color: updateAvailable ? '#FF9433' : 'var(--text-secondary)' }}>
@@ -113,7 +114,7 @@ export default function BentoHeader({
                   animation: 'pulse 1.8s infinite ease-in-out'
                 }}
               >
-                <span style={{ fontSize: '0.6rem' }}>●</span> UPDATE TERSEDIA
+                <span style={{ fontSize: '0.6rem' }}>●</span> UPDATE {serverVersion ? `${serverVersion} ` : ''}TERSEDIA
               </span>
             ) : (
               <span
@@ -140,7 +141,7 @@ export default function BentoHeader({
             {currentVersion}
           </div>
           <div className="bento-card-sub" style={{ color: updateAvailable ? '#FFAA5B' : 'var(--text-secondary)' }}>
-            {updateAvailable ? '⚡ UPDATE TERSEDIA — Klik untuk perbarui aplikasi!' : 'Sintelis Desktop Suite (Klik untuk periksa update)'}
+            {updateAvailable ? `⚡ Update ${serverVersion || 'baru'} tersedia — Klik untuk perbarui!` : 'Sintelis Desktop Suite (Klik untuk periksa update)'}
           </div>
         </div>
 
