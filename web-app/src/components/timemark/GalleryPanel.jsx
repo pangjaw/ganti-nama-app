@@ -8,6 +8,7 @@ export default function GalleryPanel({ exportDir, onPickFolder }) {
   const [feedback, setFeedback] = useState(null);
 
   // Filter States
+  const [sourceTypeFilter, setSourceTypeFilter] = useState('timemark'); // 'timemark' | 'export' | 'all'
   const [selectedFile, setSelectedFile] = useState('');
   const [selectedStation, setSelectedStation] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('');
@@ -34,9 +35,18 @@ export default function GalleryPanel({ exportDir, onPickFolder }) {
       const res = await fetch(`/api/timemark/photos?folder=${encodeURIComponent(exportDir)}`);
       if (res.ok) {
         const data = await res.json();
-        setAssets(data.assets || []);
+        const loadedAssets = data.assets || [];
+        setAssets(loadedAssets);
         setTargetFiles(data.targetFiles || []);
         setSourceFiles(data.sourceFiles || []);
+
+        // Prioritaskan tampilkan foto hasil timemark jika ada
+        const hasEdited = loadedAssets.some(a => a.isEdited);
+        if (hasEdited) {
+          setSourceTypeFilter('timemark');
+        } else {
+          setSourceTypeFilter('all');
+        }
       } else {
         setFeedback({ type: 'error', text: 'Gagal memuat galeri foto dari folder ekspor.' });
       }
@@ -50,6 +60,10 @@ export default function GalleryPanel({ exportDir, onPickFolder }) {
   useEffect(() => {
     fetchPhotos();
   }, [exportDir]);
+
+  // Counts for Source Type Toggle
+  const editedCount = useMemo(() => assets.filter(a => a.isEdited).length, [assets]);
+  const exportCount = useMemo(() => assets.filter(a => !a.isEdited).length, [assets]);
 
   // Unique lists for dropdowns
   const uniqueStations = useMemo(() => {
@@ -92,6 +106,10 @@ export default function GalleryPanel({ exportDir, onPickFolder }) {
   // Filtered Assets
   const filteredAssets = useMemo(() => {
     return assets.filter(a => {
+      // 0. Filter Tipe Sumber Foto (Hasil Timemark vs Ekspor Asli)
+      if (sourceTypeFilter === 'timemark' && !a.isEdited) return false;
+      if (sourceTypeFilter === 'export' && a.isEdited) return false;
+
       // 1. Filter File (Target PDF atau Source PDF)
       if (selectedFile) {
         const inTargets = (a.targetFiles || []).includes(selectedFile);
@@ -126,9 +144,12 @@ export default function GalleryPanel({ exportDir, onPickFolder }) {
 
       return true;
     });
-  }, [assets, selectedFile, selectedStation, selectedCategory, selectedStatus, searchQuery]);
+  }, [assets, sourceTypeFilter, selectedFile, selectedStation, selectedCategory, selectedStatus, searchQuery]);
 
-  const isFilterActive = Boolean(selectedFile || selectedStation || selectedCategory || selectedStatus || searchQuery);
+  const isFilterActive = Boolean(
+    selectedFile || selectedStation || selectedCategory || selectedStatus || searchQuery ||
+    (sourceTypeFilter !== 'timemark' && editedCount > 0)
+  );
 
   const resetAllFilters = () => {
     setSelectedFile('');
@@ -136,6 +157,7 @@ export default function GalleryPanel({ exportDir, onPickFolder }) {
     setSelectedCategory('');
     setSelectedStatus('');
     setSearchQuery('');
+    setSourceTypeFilter(editedCount > 0 ? 'timemark' : 'all');
   };
 
   // Open Edit Time Modal
@@ -272,11 +294,19 @@ export default function GalleryPanel({ exportDir, onPickFolder }) {
       
       {/* ── Top Bar: Folder & Status Bar ── */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '0.85rem 1.25rem', width: '100%', flexWrap: 'wrap', gap: '0.75rem' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
           <div>
-            <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block' }}>Folder Foto Ekspor:</span>
-            <strong style={{ fontSize: '0.875rem', color: 'var(--text-primary)' }}>{exportDir || 'Belum dipilih'}</strong>
+            <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', display: 'block' }}>Folder Foto Ekspor / Timemark:</span>
+            <strong style={{ fontSize: '0.875rem', color: 'var(--text-primary)', wordBreak: 'break-all' }}>{exportDir || 'Belum dipilih'}</strong>
           </div>
+          {onPickFolder && (
+            <button
+              onClick={onPickFolder}
+              style={{ padding: '0.4rem 0.85rem', background: 'var(--accent)', color: '#ffffff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '0.35rem' }}
+            >
+              📁 Ganti Folder...
+            </button>
+          )}
           <button
             onClick={fetchPhotos}
             disabled={loading}
@@ -295,7 +325,97 @@ export default function GalleryPanel({ exportDir, onPickFolder }) {
       </div>
 
       {/* ── Filter Toolbar (Diadopsi dari Web App) ── */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '1rem 1.25rem', width: '100%' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', background: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '10px', padding: '1rem 1.25rem', width: '100%' }}>
+        
+        {/* Source Type Toggle: Hasil Timemark vs Foto Ekspor Mentah */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', background: 'var(--bg-secondary)', padding: '0.3rem', borderRadius: '8px', border: '1px solid var(--border-color)' }}>
+            <button
+              type="button"
+              onClick={() => setSourceTypeFilter('timemark')}
+              style={{
+                padding: '0.4rem 0.9rem',
+                borderRadius: '6px',
+                border: 'none',
+                background: sourceTypeFilter === 'timemark' ? '#10b981' : 'transparent',
+                color: sourceTypeFilter === 'timemark' ? '#ffffff' : 'var(--text-secondary)',
+                fontWeight: 700,
+                fontSize: '0.8rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                transition: 'all 0.2s',
+                boxShadow: sourceTypeFilter === 'timemark' ? '0 2px 8px rgba(16, 185, 129, 0.4)' : 'none'
+              }}
+              title="Tampilkan hanya foto yang telah diedit Timemark (dari folder 04_photos_edited)"
+            >
+              <span>✨ Foto Hasil Timemark</span>
+              <span style={{ fontSize: '0.7rem', padding: '1px 6px', borderRadius: '10px', background: sourceTypeFilter === 'timemark' ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.1)' }}>
+                {editedCount}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setSourceTypeFilter('export')}
+              style={{
+                padding: '0.4rem 0.9rem',
+                borderRadius: '6px',
+                border: 'none',
+                background: sourceTypeFilter === 'export' ? 'var(--accent)' : 'transparent',
+                color: sourceTypeFilter === 'export' ? '#ffffff' : 'var(--text-secondary)',
+                fontWeight: 700,
+                fontSize: '0.8rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                transition: 'all 0.2s',
+                boxShadow: sourceTypeFilter === 'export' ? '0 2px 8px rgba(59, 130, 246, 0.4)' : 'none'
+              }}
+              title="Tampilkan foto hasil ekstraksi asli/mentah (sebelum edit Timemark)"
+            >
+              <span>📷 Foto Ekspor Asli</span>
+              <span style={{ fontSize: '0.7rem', padding: '1px 6px', borderRadius: '10px', background: sourceTypeFilter === 'export' ? 'rgba(0,0,0,0.3)' : 'rgba(255,255,255,0.1)' }}>
+                {exportCount}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setSourceTypeFilter('all')}
+              style={{
+                padding: '0.4rem 0.9rem',
+                borderRadius: '6px',
+                border: 'none',
+                background: sourceTypeFilter === 'all' ? 'var(--bg-card)' : 'transparent',
+                color: sourceTypeFilter === 'all' ? 'var(--text-primary)' : 'var(--text-secondary)',
+                fontWeight: 600,
+                fontSize: '0.8rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.45rem',
+                transition: 'all 0.2s'
+              }}
+              title="Tampilkan semua aset foto baik yang sudah timemark maupun ekspor mentah"
+            >
+              <span>🌐 Semua ({assets.length})</span>
+            </button>
+          </div>
+
+          <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+            {editedCount > 0 ? (
+              <span style={{ color: '#4ade80' }}>
+                ✓ {editedCount} aset memiliki foto Timemark di subfolder <code style={{ background: 'rgba(34, 197, 94, 0.15)', padding: '2px 5px', borderRadius: '4px' }}>04_photos_edited</code>
+              </span>
+            ) : (
+              <span>⚠️ Belum ada foto di 04_photos_edited. Jalankan Step 4 Timemark di tab Pipeline.</span>
+            )}
+          </div>
+        </div>
+
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '0.75rem', width: '100%', alignItems: 'center' }}>
           
           {/* 1. Filter Berkas PDF (Target / Sumber) */}
@@ -444,6 +564,15 @@ export default function GalleryPanel({ exportDir, onPickFolder }) {
               {/* Asset Card Header */}
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.75rem', borderBottom: '1px solid var(--border-color)', paddingBottom: '0.75rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem', flexWrap: 'wrap' }}>
+                  {asset.isEdited ? (
+                    <span style={{ fontSize: '0.75rem', fontWeight: 800, padding: '0.2rem 0.6rem', borderRadius: '4px', background: 'rgba(34, 197, 94, 0.2)', color: '#4ade80', border: '1px solid #22c55e', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                      ✨ TIMEMARK {asset.tim ? `(${asset.tim})` : ''}
+                    </span>
+                  ) : (
+                    <span style={{ fontSize: '0.75rem', fontWeight: 600, padding: '0.2rem 0.55rem', borderRadius: '4px', background: 'rgba(148, 163, 184, 0.15)', color: '#94a3b8', border: '1px solid rgba(148, 163, 184, 0.3)' }}>
+                      📷 EKSPOR ASLI
+                    </span>
+                  )}
                   <span style={{ fontSize: '0.75rem', fontWeight: 700, padding: '0.2rem 0.55rem', borderRadius: '4px', background: 'rgba(56, 189, 248, 0.15)', color: '#38bdf8', border: '1px solid rgba(56, 189, 248, 0.3)' }}>
                     {asset.station}
                   </span>
@@ -475,7 +604,7 @@ export default function GalleryPanel({ exportDir, onPickFolder }) {
                   <span style={{ fontSize: '0.75rem', fontWeight: 600, padding: '0.25rem 0.6rem', borderRadius: '5px', background: isComplete ? 'rgba(34, 197, 94, 0.15)' : 'rgba(239, 68, 68, 0.15)', color: isComplete ? '#4ade80' : '#f87171', border: `1px solid ${isComplete ? 'rgba(34, 197, 94, 0.3)' : 'rgba(239, 68, 68, 0.3)'}` }}>
                     {isComplete ? '✅ Lengkap (3 Foto)' : `⚠️ ${(asset.photos || []).length}/3 Foto`}
                   </span>
-                  <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', background: 'var(--bg-secondary)', padding: '0.25rem 0.65rem', borderRadius: '5px', fontWeight: 500 }}>
+                  <span style={{ fontSize: '0.8rem', color: asset.isEdited ? '#4ade80' : 'var(--text-secondary)', background: asset.isEdited ? 'rgba(34, 197, 94, 0.1)' : 'var(--bg-secondary)', border: asset.isEdited ? '1px solid rgba(34, 197, 94, 0.25)' : 'none', padding: '0.25rem 0.65rem', borderRadius: '5px', fontWeight: asset.isEdited ? 700 : 500 }}>
                     📅 {asset.dateText || 'Belum ada tanggal'}
                   </span>
                 </div>

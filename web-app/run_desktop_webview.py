@@ -1773,9 +1773,10 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
                 self._json({"ok": True, "assets": []})
                 return
 
-            # Indeks berkas target dari schedule.json
+            # Indeks berkas target dan tanggal dari schedule.json
             target_files_map = {}
             target_files_list = []
+            schedule_date_map = {}
             seen_target_files = set()
             sched_candidates = [
                 os.path.join(folder, "schedule.json"),
@@ -1791,6 +1792,7 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
                             sdata = json.load(sf)
                         for item in sdata.get("schedules", []):
                             fn = item.get("file")
+                            d_text = item.get("dateText") or item.get("iso_date") or ""
                             if not fn:
                                 continue
                             if fn not in seen_target_files:
@@ -1809,6 +1811,8 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
                                         target_files_map[norm_id] = []
                                     if fn not in target_files_map[norm_id]:
                                         target_files_map[norm_id].append(fn)
+                                    if d_text and norm_id not in schedule_date_map:
+                                        schedule_date_map[norm_id] = d_text
                         break
                     except Exception as e:
                         _log(f"Error reading schedule candidate {sc_path}: {e}")
@@ -1843,63 +1847,116 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
                     except Exception as e:
                         _log(f"Error reading csv candidate {c_path}: {e}")
 
+            # Cari folder yang akan di-scan:
+            folders_to_scan = [folder]
+            folder_base = os.path.basename(os.path.normpath(folder)).lower()
+            if "04_photos_edited" not in folder_base:
+                # Cek subfolder 04_photos_edited di dalam folder
+                sub_edited = os.path.join(folder, "04_photos_edited")
+                sibling_edited = os.path.join(os.path.dirname(folder), "04_photos_edited")
+                if not os.path.isdir(sub_edited) and os.path.isdir(sibling_edited):
+                    folders_to_scan.append(sibling_edited)
+            else:
+                # Jika user memilih folder 04_photos_edited langsung, cek apakah ada 03_photos_export di sebelahnya
+                sibling_raw = os.path.join(os.path.dirname(folder), "03_photos_export")
+                if os.path.isdir(sibling_raw):
+                    folders_to_scan.append(sibling_raw)
+
             assets = []
-            for root, dirs, files in os.walk(folder):
-                photo_files = [f for f in files if f.lower() in ("0.jpg", "50.jpg", "100.jpg")]
-                if not photo_files:
-                    continue
+            seen_asset_paths = set()
 
-                rel_path = os.path.relpath(root, folder).replace("\\", "/")
-                parts = [p for p in rel_path.split("/") if p]
-                if not parts:
-                    continue
+            for scan_dir in folders_to_scan:
+                for root, dirs, files in os.walk(scan_dir):
+                    photo_files = [f for f in files if f.lower() in ("0.jpg", "50.jpg", "100.jpg")]
+                    if not photo_files:
+                        continue
 
-                detail = parts[-1]
-                category = parts[-2] if len(parts) >= 2 else "ASET"
-                station = parts[-3] if len(parts) >= 3 else (parts[0] if len(parts) >= 1 else "STN")
-                if station.lower().startswith("tim_") and len(parts) >= 4:
-                    station = parts[-3]
-                    category = parts[-2]
+                    norm_root = os.path.normpath(root)
+                    if norm_root in seen_asset_paths:
+                        continue
+                    seen_asset_paths.add(norm_root)
 
-                norm_detail = " ".join(re.sub(r'_\d{2}-\d{2}$', '', detail.strip().upper()).split())
-                matching_targets = target_files_map.get(norm_detail, [])
-                matching_source = source_files_map.get(norm_detail, "")
+                    rel_path = os.path.relpath(root, folder).replace("\\", "/")
+                    root_norm = root.replace("\\", "/")
+                    parts = [p for p in root_norm.split("/") if p]
+                    if not parts:
+                        continue
 
-                date_text = ""
-                date_file = os.path.join(root, "date.txt")
-                if os.path.isfile(date_file):
-                    try:
-                        with open(date_file, "r", encoding="utf-8", errors="ignore") as df:
-                            date_text = df.read().strip()
-                    except Exception:
-                        pass
+                    detail = parts[-1]
+                    category = parts[-2] if len(parts) >= 2 else "ASET"
+                    station = parts[-3] if len(parts) >= 3 else (parts[0] if len(parts) >= 1 else "STN")
 
-                photos = []
-                for p_name in ["0.jpg", "50.jpg", "100.jpg"]:
-                    p_file = os.path.join(root, p_name)
-                    if os.path.isfile(p_file):
-                        photos.append({
-                            "name": p_name,
-                            "url": f"/api/timemark/photo-file?path={urllib.parse.quote(os.path.abspath(p_file))}"
-                        })
+                    is_edited = "04_photos_edited" in parts or "04_photos_edited" in rel_path
 
-                assets.append({
-                    "station": station,
-                    "category": category,
-                    "detail": detail,
-                    "relPath": rel_path,
-                    "dateText": date_text,
-                    "targetFiles": matching_targets,
-                    "sourceFile": matching_source,
-                    "photos": photos
-                })
+                    # Deteksi nama Tim jika ada
+                    tim = ""
+                    for p in parts:
+                        if re.match(r"^tim[_\s]\d+$", p, re.IGNORECASE):
+                            tim = p.replace("_", " ").title()
+                            break
 
-            assets.sort(key=lambda a: (a["station"], a["category"], a["detail"]))
+                    norm_detail = " ".join(re.sub(r'_\d{2}-\d{2}$', '', detail.strip().upper()).split())
+                    matching_targets = target_files_map.get(norm_detail, [])
+                    matching_source = source_files_map.get(norm_detail, "")
+
+                    # Ambil tanggal: prioritas meta.json -> date.txt -> schedule_date_map
+                    date_text = ""
+                    meta_file = os.path.join(root, "meta.json")
+                    if os.path.isfile(meta_file):
+                        try:
+                            with open(meta_file, "r", encoding="utf-8", errors="ignore") as mf:
+                                mdata = json.load(mf)
+                            for pk in ["0.jpg", "50.jpg", "100.jpg"]:
+                                if pk in mdata and isinstance(mdata[pk], dict) and mdata[pk].get("dateText"):
+                                    date_text = mdata[pk]["dateText"]
+                                    break
+                        except Exception:
+                            pass
+
+                    if not date_text:
+                        date_file = os.path.join(root, "date.txt")
+                        if os.path.isfile(date_file):
+                            try:
+                                with open(date_file, "r", encoding="utf-8", errors="ignore") as df:
+                                    date_text = df.read().strip()
+                            except Exception:
+                                pass
+
+                    if not date_text and norm_detail in schedule_date_map:
+                        date_text = schedule_date_map[norm_detail]
+
+                    photos = []
+                    for p_name in ["0.jpg", "50.jpg", "100.jpg"]:
+                        p_file = os.path.join(root, p_name)
+                        if os.path.isfile(p_file):
+                            photos.append({
+                                "name": p_name,
+                                "url": f"/api/timemark/photo-file?path={urllib.parse.quote(os.path.abspath(p_file))}"
+                            })
+
+                    assets.append({
+                        "station": station,
+                        "category": category,
+                        "detail": detail,
+                        "relPath": rel_path,
+                        "dateText": date_text,
+                        "targetFiles": matching_targets,
+                        "sourceFile": matching_source,
+                        "photos": photos,
+                        "isEdited": is_edited,
+                        "tim": tim,
+                        "sourceType": "timemark" if is_edited else "export"
+                    })
+
+            # Sortir: Dahulukan yang isEdited agar foto hasil timemark tampil pertama
+            assets.sort(key=lambda a: (a["station"], a["category"], a["detail"], 0 if a["isEdited"] else 1))
             self._json({
                 "ok": True,
                 "assets": assets,
                 "targetFiles": sorted(target_files_list, key=lambda x: x["file"]),
-                "sourceFiles": sorted(source_files_list)
+                "sourceFiles": sorted(source_files_list),
+                "editedCount": sum(1 for a in assets if a.get("isEdited")),
+                "exportCount": sum(1 for a in assets if not a.get("isEdited"))
             })
         except Exception as e:
             _log(f"Error scanning photos: {e}")
