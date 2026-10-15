@@ -24,7 +24,7 @@ from pdf2image import convert_from_path
 from PIL import ImageOps, Image
 import pytesseract
 import updater_engine
-from timemark_engine import pipeline_runner
+from timemark_engine import date_changer_engine, pipeline_runner
 
 if getattr(sys, 'frozen', False):
     BUNDLE_DIR = sys._MEIPASS
@@ -1355,6 +1355,47 @@ def _pick_file_native():
     return None
 
 
+def _pick_files_native():
+    """Buka dialog pemilihan multiple file di Windows:
+    1. Tkinter askopenfilenames (Topmost)
+    2. pywebview create_file_dialog OPEN allow_multiple=True
+    """
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+        root = tk.Tk()
+        root.withdraw()
+        root.attributes("-topmost", True)
+        fpaths = filedialog.askopenfilenames(
+            title="Pilih Berkas PDF",
+            filetypes=[("Berkas PDF", "*.pdf"), ("Semua Berkas", "*.*")]
+        )
+        root.destroy()
+        if fpaths:
+            return [os.path.normpath(f) for f in fpaths if os.path.isfile(f)]
+    except Exception as e:
+        _log(f"Tkinter multi file picker notice: {e}")
+
+    try:
+        if getattr(webview, 'windows', None) and len(webview.windows) > 0:
+            dialog_type = getattr(webview.FileDialog, 'OPEN', getattr(webview, 'OPEN_DIALOG', 10))
+            result = webview.windows[0].create_file_dialog(
+                dialog_type,
+                allow_multiple=True,
+                file_types=("Berkas PDF (*.pdf)", "Semua Berkas (*.*)")
+            )
+            if result:
+                if isinstance(result, (list, tuple)):
+                    return [os.path.normpath(f) for f in result if os.path.isfile(f)]
+                elif os.path.isfile(result):
+                    return [os.path.normpath(result)]
+    except Exception as e:
+        _log(f"WebView multi file dialog notice: {e}")
+
+    return []
+
+
+
 def _pick_json_file_native(title="Pilih Berkas Cadangan Preset (*.json)"):
     """Buka dialog pemilihan berkas JSON cadangan di Windows."""
     # 1. Tkinter (Topmost)
@@ -1694,6 +1735,12 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
             self._handle_update_download()
         elif parsed.path == "/api/update/apply":
             self._json(updater_engine.apply_update_and_restart())
+        elif parsed.path == "/api/select-files":
+            self._handle_select_files()
+        elif parsed.path == "/api/date-changer/scan":
+            self._handle_date_changer_scan()
+        elif parsed.path == "/api/date-changer/apply":
+            self._handle_date_changer_apply()
         else:
             self.send_error(404)
 
@@ -2536,6 +2583,76 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
             _log(f"File selection error: {e}")
             self._json({"error": str(e)}, 500)
 
+    def _handle_select_files(self):
+        try:
+            fpaths = _pick_files_native()
+            self._json({"paths": fpaths, "items": [{"path": p, "name": os.path.basename(p)} for p in fpaths]})
+        except Exception as e:
+            _log(f"Multi-file selection error: {e}")
+            self._json({"error": str(e)}, 500)
+
+    def _handle_date_changer_scan(self):
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length)
+            data = json.loads(body) if body else {}
+
+            paths = data.get("paths", [])
+            folder = data.get("folder", "")
+
+            all_pdf_paths = []
+            if folder and os.path.isdir(folder):
+                for fname in sorted(os.listdir(folder)):
+                    if fname.lower().endswith(".pdf"):
+                        all_pdf_paths.append(os.path.join(folder, fname))
+            elif paths:
+                all_pdf_paths = [p for p in paths if os.path.isfile(p)]
+
+            items = []
+            for p in all_pdf_paths:
+                info = date_changer_engine.scan_pdf_date(p)
+                items.append(info)
+
+            self._json({"ok": True, "items": items})
+        except Exception as e:
+            _log(f"Date changer scan error: {e}")
+            self._json({"error": str(e)}, 500)
+
+    def _handle_date_changer_apply(self):
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length)
+            data = json.loads(body) if body else {}
+
+            items = data.get("items", [])
+            create_backup = data.get("create_backup", False)
+
+            results = []
+            success_count = 0
+            error_count = 0
+
+            for it in items:
+                pdf_path = it.get("path")
+                new_date = it.get("new_date")
+                if not pdf_path or not new_date:
+                    continue
+                res = date_changer_engine.apply_date_change(pdf_path, new_date, create_backup=create_backup)
+                if res.get("ok"):
+                    success_count += 1
+                else:
+                    error_count += 1
+                results.append(res)
+
+            self._json({
+                "ok": True,
+                "success_count": success_count,
+                "error_count": error_count,
+                "results": results
+            })
+        except Exception as e:
+            _log(f"Date changer apply error: {e}")
+            self._json({"error": str(e)}, 500)
+
     def _handle_save_file(self):
         global _selected_folder
         try:
@@ -2800,7 +2917,7 @@ def main():
     print("[OK] Opening desktop window...")
 
     webview.create_window(
-        "Sintelis Utility 2.0 (v1.6.7)",
+        "Sintelis Utility 2.0 (v1.6.8)",
         f"http://localhost:{PORT}",
         width=1400,
         height=900,

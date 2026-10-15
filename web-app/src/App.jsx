@@ -10,6 +10,7 @@ import { pickDirectory, writeFileToDir, createZipBlob, triggerDownload, saveFile
 import P3STEDownloader from './components/P3STEDownloader';
 import AssetAuditPanel from './components/AssetAuditPanel';
 import TimemarkModule from './components/TimemarkModule';
+import DateChangerPanel from './components/DateChangerPanel';
 import UpdateBanner from './components/UpdateBanner';
 import UpdateModal from './components/UpdateModal';
 import Sidebar from './components/Sidebar';
@@ -699,7 +700,7 @@ export default function App() {
       <main className="app-main-workspace">
         {/* Bento Stats & Workspace Title Header */}
         <BentoHeader
-          currentVersion="v1.6.7"
+          currentVersion="v1.6.8"
           updateAvailable={updateAvailable}
           onOpenUpdateModal={() => setShowUpdateModal(true)}
           activePreset={activePresetName || "Standar (Resor 1.21 Bogor)"}
@@ -720,6 +721,11 @@ export default function App() {
       {/* Timemark Tab View (Persisted in DOM) */}
       <div style={{ display: mainTab === 'timemark' ? 'flex' : 'none', flexDirection: 'column', flex: 1, width: '100%', minHeight: 0, overflow: 'hidden' }}>
         <TimemarkModule />
+      </div>
+
+      {/* Ubah Tanggal Tab View (Persisted in DOM) */}
+      <div style={{ display: mainTab === 'ubah_tanggal' ? 'flex' : 'none', flexDirection: 'column', flex: 1, width: '100%', minHeight: 0, overflow: 'hidden' }}>
+        <DateChangerPanel />
       </div>
 
       {/* Audit Aset Tab View (Standalone Full Page) */}

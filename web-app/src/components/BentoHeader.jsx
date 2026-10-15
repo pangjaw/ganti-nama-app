@@ -2,7 +2,7 @@ import React from 'react';
 
 export default function BentoHeader({
   activePreset = 'Standar (Resor 1.21 Bogor)',
-  currentVersion = 'v1.6.7',
+  currentVersion = 'v1.6.8',
   updateAvailable = false,
   onOpenUpdateModal = null,
   mainTab = 'ocr',
@@ -30,6 +30,11 @@ export default function BentoHeader({
         return {
           title: 'Timemark & Manajemen Berkas Lapangan',
           sub: 'Otomasi watermark koordinat, jadwal dinasan, tablo checklist, dan penggabungan PDF'
+        };
+      case 'ubah_tanggal':
+        return {
+          title: 'Ubah Tanggal Dokumen & Berkas PDF',
+          sub: 'Penggantian tanggal nama file, formulir Halaman 1, dan header Halaman Foto secara kustom'
         };
       default:
         return {
