@@ -54,6 +54,7 @@ a = Analysis(
         'fitz', 'pdfplumber', 'pypdf', 'openpyxl', 'numpy',
         'cryptography', 'pypdf._crypt_providers._cryptography',
         'updater_engine', 'timemark_engine', 'timemark_engine.pipeline_runner',
+        'timemark_engine.date_changer_engine',
     ],
     hookspath=[], hooksconfig={}, runtime_hooks=[],
     excludes=[

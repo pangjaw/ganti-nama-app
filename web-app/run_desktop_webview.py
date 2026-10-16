@@ -1711,10 +1711,16 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
             self._json({"ok": True})
         elif parsed.path == "/api/timemark/edit-time":
             self._handle_timemark_edit_time()
+        elif parsed.path == "/api/timemark/manual-edit":
+            self._handle_timemark_manual_edit()
+        elif parsed.path == "/api/timemark/remerge-single":
+            self._handle_timemark_remerge_single()
         elif parsed.path == "/api/timemark/edit-coord":
             self._handle_timemark_edit_coord()
         elif parsed.path == "/api/timemark/replace-photo":
             self._handle_timemark_replace_photo()
+        elif parsed.path == "/api/timemark/revert-photo":
+            self._handle_timemark_revert_photo()
         elif parsed.path == "/api/timemark/pegawai":
             self._handle_timemark_pegawai_post()
         elif parsed.path == "/api/timemark/set-active-preset":
@@ -1847,116 +1853,213 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
                     except Exception as e:
                         _log(f"Error reading csv candidate {c_path}: {e}")
 
-            # Cari folder yang akan di-scan:
-            folders_to_scan = [folder]
-            folder_base = os.path.basename(os.path.normpath(folder)).lower()
-            if "04_photos_edited" not in folder_base:
-                # Cek subfolder 04_photos_edited di dalam folder
-                sub_edited = os.path.join(folder, "04_photos_edited")
-                sibling_edited = os.path.join(os.path.dirname(folder), "04_photos_edited")
-                if not os.path.isdir(sub_edited) and os.path.isdir(sibling_edited):
-                    folders_to_scan.append(sibling_edited)
+            folder_norm = os.path.normpath(folder)
+            folder_base_name = os.path.basename(folder_norm).lower()
+
+            # Tentukan root direktori ekspor
+            if folder_base_name in ("03_photos_export", "04_photos_edited", "04_time", "04_koordinat"):
+                export_root = os.path.dirname(folder_norm)
             else:
-                # Jika user memilih folder 04_photos_edited langsung, cek apakah ada 03_photos_export di sebelahnya
-                sibling_raw = os.path.join(os.path.dirname(folder), "03_photos_export")
-                if os.path.isdir(sibling_raw):
-                    folders_to_scan.append(sibling_raw)
+                export_root = folder_norm
 
-            assets = []
-            seen_asset_paths = set()
+            dir_raw = os.path.join(export_root, "03_photos_export")
+            if not os.path.isdir(dir_raw):
+                if folder_base_name == "03_photos_export" and os.path.isdir(folder_norm):
+                    dir_raw = folder_norm
+                else:
+                    dir_raw = folder_norm
 
-            for scan_dir in folders_to_scan:
-                for root, dirs, files in os.walk(scan_dir):
+            dir_edited = os.path.join(export_root, "04_photos_edited")
+            dir_time = os.path.join(export_root, "04_Time")
+            dir_coord = os.path.join(export_root, "04_koordinat")
+
+            # Kumpulkan semua folder aset unik: (btp, category, detail)
+            asset_dict = {}
+
+            # 1. Scan dari dir_raw
+            if os.path.isdir(dir_raw):
+                for root, dirs, files in os.walk(dir_raw):
                     photo_files = [f for f in files if f.lower() in ("0.jpg", "50.jpg", "100.jpg")]
                     if not photo_files:
                         continue
-
-                    norm_root = os.path.normpath(root)
-                    if norm_root in seen_asset_paths:
-                        continue
-                    seen_asset_paths.add(norm_root)
-
-                    rel_path = os.path.relpath(root, folder).replace("\\", "/")
-                    root_norm = root.replace("\\", "/")
-                    parts = [p for p in root_norm.split("/") if p]
+                    rel = os.path.relpath(root, dir_raw).replace("\\", "/")
+                    parts = [p for p in rel.split("/") if p and p != "."]
                     if not parts:
                         continue
-
                     detail = parts[-1]
                     category = parts[-2] if len(parts) >= 2 else "ASET"
                     station = parts[-3] if len(parts) >= 3 else (parts[0] if len(parts) >= 1 else "STN")
+                    key = (station.upper(), category.upper(), detail.upper())
+                    if key not in asset_dict:
+                        asset_dict[key] = {
+                            "station": station,
+                            "category": category,
+                            "detail": detail,
+                            "raw_dir": root,
+                            "edited_dir": None,
+                            "tim": ""
+                        }
 
-                    is_edited = "04_photos_edited" in parts or "04_photos_edited" in rel_path
-
-                    # Deteksi nama Tim jika ada
+            # 2. Scan dari dir_edited jika ada
+            if os.path.isdir(dir_edited):
+                for root, dirs, files in os.walk(dir_edited):
+                    photo_files = [f for f in files if f.lower() in ("0.jpg", "50.jpg", "100.jpg")]
+                    if not photo_files:
+                        continue
+                    rel = os.path.relpath(root, dir_edited).replace("\\", "/")
+                    parts = [p for p in rel.split("/") if p and p != "."]
+                    if not parts:
+                        continue
+                    detail = parts[-1]
+                    category = parts[-2] if len(parts) >= 2 else "ASET"
+                    station = parts[-3] if len(parts) >= 3 else (parts[0] if len(parts) >= 1 else "STN")
                     tim = ""
                     for p in parts:
                         if re.match(r"^tim[_\s]\d+$", p, re.IGNORECASE):
                             tim = p.replace("_", " ").title()
                             break
 
-                    norm_detail = " ".join(re.sub(r'_\d{2}-\d{2}$', '', detail.strip().upper()).split())
-                    matching_targets = target_files_map.get(norm_detail, [])
-                    matching_source = source_files_map.get(norm_detail, "")
+                    key = (station.upper(), category.upper(), detail.upper())
+                    if key not in asset_dict:
+                        asset_dict[key] = {
+                            "station": station,
+                            "category": category,
+                            "detail": detail,
+                            "raw_dir": None,
+                            "edited_dir": root,
+                            "tim": tim
+                        }
+                    else:
+                        asset_dict[key]["edited_dir"] = root
+                        if tim and not asset_dict[key]["tim"]:
+                            asset_dict[key]["tim"] = tim
 
-                    # Ambil tanggal: prioritas meta.json -> date.txt -> schedule_date_map
-                    date_text = ""
-                    meta_file = os.path.join(root, "meta.json")
-                    if os.path.isfile(meta_file):
+            # 3. Check jika dir_edited punya subfolder Tim_1/Tim_2 untuk asset_dict yang belum terhubung
+            if os.path.isdir(dir_edited):
+                for key, ainfo in asset_dict.items():
+                    if not ainfo["edited_dir"]:
+                        st, cat, det = ainfo["station"], ainfo["category"], ainfo["detail"]
+                        for tim_name in ["Tim_1", "Tim_2", ""]:
+                            cand = os.path.join(dir_edited, tim_name, st, cat, det) if tim_name else os.path.join(dir_edited, st, cat, det)
+                            if os.path.isdir(cand) and any(os.path.isfile(os.path.join(cand, x)) for x in ("0.jpg", "50.jpg", "100.jpg")):
+                                ainfo["edited_dir"] = cand
+                                if tim_name and not ainfo["tim"]:
+                                    ainfo["tim"] = tim_name.replace("_", " ").title()
+                                break
+
+            # Bangun list aset terpadu
+            assets = []
+            for (st_u, cat_u, det_u), ainfo in asset_dict.items():
+                station = ainfo["station"]
+                category = ainfo["category"]
+                detail = ainfo["detail"]
+                raw_dir = ainfo["raw_dir"]
+                edited_dir = ainfo["edited_dir"]
+                tim = ainfo["tim"]
+
+                norm_detail = " ".join(re.sub(r'_\d{2}-\d{2}$', '', detail.strip().upper()).split())
+                matching_targets = target_files_map.get(norm_detail, [])
+                matching_source = source_files_map.get(norm_detail, "")
+
+                # Ambil tanggal: meta.json -> date.txt -> schedule_date_map
+                date_text = ""
+                meta_data = {}
+                if edited_dir:
+                    mf = os.path.join(edited_dir, "meta.json")
+                    if os.path.isfile(mf):
                         try:
-                            with open(meta_file, "r", encoding="utf-8", errors="ignore") as mf:
-                                mdata = json.load(mf)
+                            with open(mf, "r", encoding="utf-8", errors="ignore") as m_file:
+                                meta_data = json.load(m_file)
                             for pk in ["0.jpg", "50.jpg", "100.jpg"]:
-                                if pk in mdata and isinstance(mdata[pk], dict) and mdata[pk].get("dateText"):
-                                    date_text = mdata[pk]["dateText"]
+                                if pk in meta_data and isinstance(meta_data[pk], dict) and meta_data[pk].get("dateText"):
+                                    date_text = meta_data[pk]["dateText"]
                                     break
                         except Exception:
                             pass
 
-                    if not date_text:
-                        date_file = os.path.join(root, "date.txt")
-                        if os.path.isfile(date_file):
-                            try:
-                                with open(date_file, "r", encoding="utf-8", errors="ignore") as df:
-                                    date_text = df.read().strip()
-                            except Exception:
-                                pass
+                if not date_text and raw_dir:
+                    df = os.path.join(raw_dir, "date.txt")
+                    if os.path.isfile(df):
+                        try:
+                            with open(df, "r", encoding="utf-8", errors="ignore") as d_file:
+                                date_text = d_file.read().strip()
+                        except Exception:
+                            pass
 
-                    if not date_text and norm_detail in schedule_date_map:
-                        date_text = schedule_date_map[norm_detail]
+                if not date_text and norm_detail in schedule_date_map:
+                    date_text = schedule_date_map[norm_detail]
 
-                    photos = []
-                    for p_name in ["0.jpg", "50.jpg", "100.jpg"]:
-                        p_file = os.path.join(root, p_name)
-                        if os.path.isfile(p_file):
-                            photos.append({
-                                "name": p_name,
-                                "url": f"/api/timemark/photo-file?path={urllib.parse.quote(os.path.abspath(p_file))}"
-                            })
+                rel_dir = f"{station}/{category}/{detail}"
+                photos = []
+                for p_name in ["0.jpg", "50.jpg", "100.jpg"]:
+                    raw_path = os.path.join(raw_dir, p_name) if raw_dir else None
+                    has_raw = bool(raw_path and os.path.isfile(raw_path))
 
-                    assets.append({
-                        "station": station,
-                        "category": category,
-                        "detail": detail,
-                        "relPath": rel_path,
-                        "dateText": date_text,
-                        "targetFiles": matching_targets,
-                        "sourceFile": matching_source,
-                        "photos": photos,
-                        "isEdited": is_edited,
-                        "tim": tim,
-                        "sourceType": "timemark" if is_edited else "export"
+                    edited_path = os.path.join(edited_dir, p_name) if edited_dir else None
+                    has_edited = bool(edited_path and os.path.isfile(edited_path))
+
+                    if not has_raw and not has_edited:
+                        continue
+
+                    # URL foto raw
+                    raw_url = ""
+                    if has_raw:
+                        raw_url = f"/api/timemark/photo-file?path={urllib.parse.quote(os.path.abspath(raw_path))}"
+
+                    # URL foto edited
+                    edited_url = None
+                    if has_edited:
+                        mtime = int(os.path.getmtime(edited_path))
+                        edited_url = f"/api/timemark/photo-file?path={urllib.parse.quote(os.path.abspath(edited_path))}&t={mtime}"
+
+                    p_meta = meta_data.get(p_name, {}) if isinstance(meta_data.get(p_name), dict) else {}
+                    has_backup = bool(has_raw and (os.path.isfile(raw_path + ".original_backup.jpg") or os.path.isfile(raw_path + ".orig.jpg")))
+
+                    photos.append({
+                        "name": p_name,
+                        "rawUrl": raw_url or edited_url,
+                        "editedUrl": edited_url,
+                        "timeUrl": None,
+                        "coordUrl": None,
+                        "hasEdited": has_edited,
+                        "hasTime": False,
+                        "hasCoord": False,
+                        "isCollage": False,
+                        "hasBackup": has_backup,
+                        "meta": p_meta,
+                        "url": edited_url if has_edited else raw_url
                     })
 
-            # Sortir: Dahulukan yang isEdited agar foto hasil timemark tampil pertama
-            assets.sort(key=lambda a: (a["station"], a["category"], a["detail"], 0 if a["isEdited"] else 1))
+                has_any_edited = any(p["hasEdited"] for p in photos)
+                assets.append({
+                    "station": station,
+                    "btp": station,
+                    "category": category,
+                    "detail": detail,
+                    "identifier": detail,
+                    "relDir": rel_dir,
+                    "relPath": rel_dir,
+                    "dateText": date_text,
+                    "targetFiles": matching_targets,
+                    "sourceFile": matching_source,
+                    "photos": photos,
+                    "hasEdited": has_any_edited,
+                    "isEdited": has_any_edited,
+                    "tim": tim,
+                    "sourceType": "timemark" if has_any_edited else "export"
+                })
+
+            # Sortir: Aset dengan hasEdited tampil lebih dulu, lalu abjad stasiun/kategori/detail
+            assets.sort(key=lambda a: (0 if a["hasEdited"] else 1, a["station"], a["category"], a["detail"]))
+
             self._json({
                 "ok": True,
                 "assets": assets,
                 "targetFiles": sorted(target_files_list, key=lambda x: x["file"]),
                 "sourceFiles": sorted(source_files_list),
-                "editedCount": sum(1 for a in assets if a.get("isEdited")),
-                "exportCount": sum(1 for a in assets if not a.get("isEdited"))
+                "editedCount": sum(1 for a in assets if a.get("hasEdited")),
+                "exportCount": sum(1 for a in assets if not a.get("hasEdited")),
+                "total": len(assets)
             })
         except Exception as e:
             _log(f"Error scanning photos: {e}")
@@ -2193,44 +2296,310 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
             _log(f"Import presets error: {e}")
             self._json({"ok": False, "error": str(e)}, 500)
 
-    def _handle_timemark_edit_time(self):
+    def _handle_timemark_manual_edit(self):
         try:
             length = int(self.headers.get("Content-Length", 0))
             body = self.rfile.read(length)
             data = json.loads(body) if body else {}
-            base_dir = data.get("baseExportDir", "")
-            rel_path = data.get("assetRelPath", "")
-            new_date = data.get("newDateText", "").strip()
-            if not base_dir or not rel_path or not new_date:
-                self._json({"ok": False, "error": "Parameter tidak lengkap."}, 400)
+
+            base_dir = data.get("baseExportDir") or data.get("folder") or ""
+            raw_rel = data.get("rawRelPath") or data.get("assetRelPath") or ""
+            date_text = data.get("dateText", "").strip()
+            y_pos = data.get("yPos")
+            x_pos = data.get("xPos")
+            apply_to_folder = data.get("applyToFolder", True)
+            tim_group = data.get("timGroup", "Tim_1")
+
+            if not raw_rel or not date_text:
+                self._json({"ok": False, "error": "rawRelPath dan dateText wajib diisi."}, 400)
                 return
 
-            target_folder = os.path.normpath(os.path.join(base_dir, rel_path))
-            if not os.path.isdir(target_folder):
-                self._json({"ok": False, "error": "Folder aset tidak ditemukan."}, 404)
-                return
+            norm_rel = raw_rel.replace("\\", "/").strip("/")
+            parts = norm_rel.split("/")
+            if norm_rel.lower().endswith(".jpg"):
+                asset_rel = "/".join(parts[:-1])
+                target_fnames = [parts[-1]] if not apply_to_folder else ["0.jpg", "50.jpg", "100.jpg"]
+            else:
+                asset_rel = norm_rel
+                target_fnames = ["0.jpg", "50.jpg", "100.jpg"]
 
-            date_file = os.path.join(target_folder, "date.txt")
-            with open(date_file, "w", encoding="utf-8") as df:
-                df.write(new_date + "\n")
+            if not base_dir:
+                base_dir = os.path.join(BASE_DIR, "03_photos_export")
+            base_norm = os.path.normpath(base_dir)
+            if os.path.basename(base_norm).lower() in ("03_photos_export", "04_photos_edited"):
+                export_root = os.path.dirname(base_norm)
+            else:
+                export_root = base_norm
+
+            photos_export = os.path.join(export_root, "03_photos_export")
+            if not os.path.isdir(photos_export):
+                photos_export = base_norm
+
+            photos_edited = os.path.join(export_root, "04_photos_edited")
+            os.makedirs(photos_edited, exist_ok=True)
+
+            def calc_photo_date(base_dt, stem):
+                clean_dt = str(base_dt or "").strip()
+                m = re.search(r"^(.*?\d{4})\s+(\d{2}):(\d{2})$", clean_dt)
+                if not m:
+                    return clean_dt
+                d_part, hh, mm = m.group(1), int(m.group(2)), int(m.group(3))
+                tot = hh * 60 + mm
+                pct = 50 if stem == "50" else (100 if stem == "100" else 0)
+                tot += round((pct * 45) / 100)
+                return f"{d_part} {(tot // 60) % 24:02d}:{tot % 60:02d}"
 
             sub_env = os.environ.copy()
             sub_env["PYTHONUNBUFFERED"] = "1"
             sub_env["PYTHONIOENCODING"] = "utf-8"
 
-            cmd = make_script_cmd("edit_timemark_ide1.py", [
-                "--input", target_folder,
-                "--date", new_date,
-                "--detector", "guide"
+            meta_saved = {}
+            for fname in target_fnames:
+                stem = os.path.splitext(fname)[0]
+                p_date = calc_photo_date(date_text, stem)
+
+                in_cand = os.path.join(photos_export, asset_rel, fname)
+                if not os.path.isfile(in_cand):
+                    in_cand = os.path.join(photos_edited, tim_group, asset_rel, fname)
+                    if not os.path.isfile(in_cand):
+                        continue
+
+                out_target = os.path.join(photos_edited, tim_group, asset_rel, fname)
+                os.makedirs(os.path.dirname(out_target), exist_ok=True)
+
+                cmd = make_script_cmd("edit_timemark_ide1.py", [
+                    "--input", in_cand,
+                    "--single-out", out_target,
+                    "--date", p_date,
+                    "--detector", "guide"
+                ])
+                if y_pos is not None and str(y_pos) != "":
+                    cmd.extend(["--y-override", str(y_pos)])
+                if x_pos is not None and str(x_pos) != "":
+                    cmd.extend(["--x-override", str(x_pos)])
+
+                subprocess.run(
+                    cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", env=sub_env, cwd=BASE_DIR,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+                )
+
+                meta_saved[fname] = {
+                    "dateText": p_date,
+                    "yPos": int(y_pos) if (y_pos is not None and str(y_pos) != "") else 220,
+                    "xPos": int(x_pos) if (x_pos is not None and str(x_pos) != "") else 14,
+                    "manualEdit": True,
+                    "detector": "guide",
+                    "timestamp": time.time()
+                }
+
+            if meta_saved:
+                target_meta_dir = os.path.join(photos_edited, tim_group, asset_rel)
+                meta_file = os.path.join(target_meta_dir, "meta.json")
+                curr_meta = {}
+                if os.path.isfile(meta_file):
+                    try:
+                        with open(meta_file, "r", encoding="utf-8") as mf:
+                            curr_meta = json.load(mf)
+                    except Exception:
+                        pass
+                curr_meta.update(meta_saved)
+                with open(meta_file, "w", encoding="utf-8") as mf:
+                    json.dump(curr_meta, mf, indent=2, ensure_ascii=False)
+
+                for d_dir in [os.path.join(photos_export, asset_rel), target_meta_dir]:
+                    try:
+                        os.makedirs(d_dir, exist_ok=True)
+                        with open(os.path.join(d_dir, "date.txt"), "w", encoding="utf-8") as df:
+                            df.write(date_text + "\n")
+                    except Exception:
+                        pass
+
+            self._json({"ok": True, "success": True, "message": "Timemark berhasil diperbarui dan disimpan."})
+        except Exception as e:
+            _log(f"Manual edit error: {e}")
+            self._json({"ok": False, "error": str(e)}, 500)
+
+    def _handle_timemark_remerge_single(self):
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length)
+            data = json.loads(body) if body else {}
+
+            raw_rel = data.get("rawRelPath", "")
+            pdf_name = data.get("pdfName") or data.get("targetPdfName") or ""
+            base_dir = data.get("baseExportDir") or data.get("folder") or ""
+            target_dir = data.get("targetDir") or ""
+            merged_dir = data.get("mergedDir") or ""
+
+            if base_dir:
+                base_norm = os.path.normpath(base_dir)
+                if os.path.basename(base_norm).lower() in ("03_photos_export", "04_photos_edited", "05_pdf_merged"):
+                    export_root = os.path.dirname(base_norm)
+                else:
+                    export_root = base_norm
+            else:
+                export_root = BASE_DIR
+
+            photos_edited = os.path.join(export_root, "04_photos_edited")
+
+            if not target_dir or not os.path.isdir(target_dir):
+                cand_targets = [
+                    os.path.join(export_root, "02_pdf_target"),
+                    os.path.join(os.path.dirname(export_root), "02_pdf_target"),
+                    os.path.join(BASE_DIR, "02_pdf_target"),
+                ]
+                for ct in cand_targets:
+                    if os.path.isdir(ct):
+                        target_dir = ct
+                        break
+
+            if not merged_dir:
+                merged_dir = os.path.join(export_root, "05_pdf_merged")
+            os.makedirs(merged_dir, exist_ok=True)
+
+            if not pdf_name and raw_rel:
+                norm_rel = raw_rel.replace("\\", "/").strip("/")
+                parts = norm_rel.split("/")
+                ident = parts[-2] if len(parts) >= 2 and parts[-1].lower().endswith(".jpg") else parts[-1]
+                norm_ident = " ".join(re.sub(r'_\d{2}-\d{2}$', '', ident.strip().upper()).split())
+
+                sched_path = os.path.join(export_root, "schedule.json")
+                if os.path.isfile(sched_path):
+                    try:
+                        with open(sched_path, "r", encoding="utf-8") as sf:
+                            sched = json.load(sf)
+                        for item in sched.get("schedules", []):
+                            i_id = " ".join(re.sub(r'_\d{2}-\d{2}$', '', (item.get("identifier") or "").strip().upper()).split())
+                            b_id = " ".join(re.sub(r'_\d{2}-\d{2}$', '', (item.get("base_identifier") or "").strip().upper()).split())
+                            if norm_ident == i_id or norm_ident == b_id:
+                                pdf_name = item.get("file")
+                                break
+                    except Exception:
+                        pass
+
+                if not pdf_name and target_dir and os.path.isdir(target_dir):
+                    for fn in os.listdir(target_dir):
+                        if fn.lower().endswith(".pdf") and norm_ident in fn.upper():
+                            pdf_name = fn
+                            break
+
+            if not pdf_name:
+                self._json({"ok": False, "error": "Nama berkas PDF target tidak dapat ditemukan."}, 400)
+                return
+
+            target_file_full = os.path.join(target_dir, pdf_name) if target_dir else ""
+            if not target_file_full or not os.path.isfile(target_file_full):
+                self._json({"ok": False, "error": f"Berkas target tidak ditemukan di folder target: {pdf_name}"}, 404)
+                return
+
+            sub_env = os.environ.copy()
+            sub_env["PYTHONUNBUFFERED"] = "1"
+            sub_env["PYTHONIOENCODING"] = "utf-8"
+
+            cmd = make_script_cmd("merge_pdf_foto.py", [
+                "--input", target_dir,
+                "--photos", photos_edited,
+                "--output", merged_dir,
+                "--file", pdf_name
             ])
-            subprocess.run(
+
+            res = subprocess.run(
                 cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", env=sub_env, cwd=BASE_DIR,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
             )
-            self._json({"ok": True, "message": "Waktu timemark berhasil diperbarui."})
+
+            out_file_path = ""
+            for r, d, files in os.walk(merged_dir):
+                if pdf_name in files:
+                    out_file_path = os.path.join(r, pdf_name)
+                    break
+
+            file_url = f"/api/timemark/photo-file?path={urllib.parse.quote(os.path.abspath(out_file_path))}" if out_file_path else ""
+
+            self._json({
+                "ok": True,
+                "success": True,
+                "status": "ok",
+                "pdfName": pdf_name,
+                "outputPath": out_file_path,
+                "fileUrl": file_url,
+                "details": res.stdout[-400:] if res.stdout else ""
+            })
         except Exception as e:
-            _log(f"Edit time error: {e}")
+            _log(f"Remerge single error: {e}")
             self._json({"ok": False, "error": str(e)}, 500)
+
+    def _handle_timemark_revert_photo(self):
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length)
+            data = json.loads(body) if body else {}
+
+            base_dir = data.get("baseExportDir") or data.get("folder") or ""
+            raw_rel = data.get("rawRelPath") or data.get("assetRelPath") or data.get("rel") or ""
+            photo_name = data.get("photoName") or "0.jpg"
+
+            norm_rel = raw_rel.replace("\\", "/").strip("/")
+            parts = norm_rel.split("/")
+            if norm_rel.lower().endswith(".jpg"):
+                asset_rel = "/".join(parts[:-1])
+                photo_name = parts[-1]
+            else:
+                asset_rel = norm_rel
+
+            if not base_dir:
+                base_dir = os.path.join(BASE_DIR, "03_photos_export")
+            base_norm = os.path.normpath(base_dir)
+            if os.path.basename(base_norm).lower() in ("03_photos_export", "04_photos_edited"):
+                export_root = os.path.dirname(base_norm)
+            else:
+                export_root = base_norm
+
+            photos_export = os.path.join(export_root, "03_photos_export")
+            if not os.path.isdir(photos_export):
+                photos_export = base_norm
+
+            target_photo = os.path.normpath(os.path.join(photos_export, asset_rel, photo_name))
+            backup_file = target_photo + ".original_backup.jpg"
+            if not os.path.isfile(backup_file):
+                backup_file = target_photo + ".orig.jpg"
+
+            if not os.path.isfile(backup_file):
+                self._json({"ok": False, "error": "Salinan foto asli tidak ditemukan untuk dipulihkan."}, 404)
+                return
+
+            shutil.copy2(backup_file, target_photo)
+            try:
+                os.remove(backup_file)
+            except Exception:
+                pass
+
+            date_file = os.path.join(photos_export, asset_rel, "date.txt")
+            date_text = ""
+            if os.path.isfile(date_file):
+                with open(date_file, "r", encoding="utf-8") as df:
+                    date_text = df.read().strip()
+
+            photos_edited = os.path.join(export_root, "04_photos_edited")
+            out_target = os.path.join(photos_edited, "Tim_1", asset_rel, photo_name)
+            if date_text and os.path.isdir(photos_edited):
+                sub_env = os.environ.copy()
+                sub_env["PYTHONUNBUFFERED"] = "1"
+                cmd = make_script_cmd("edit_timemark_ide1.py", [
+                    "--input", target_photo,
+                    "--single-out", out_target,
+                    "--date", date_text,
+                    "--detector", "guide"
+                ])
+                subprocess.run(cmd, capture_output=True, text=True, env=sub_env, cwd=BASE_DIR, creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000))
+
+            self._json({"ok": True, "success": True, "message": "Foto berhasil dipulihkan ke versi asli."})
+        except Exception as e:
+            _log(f"Revert photo error: {e}")
+            self._json({"ok": False, "error": str(e)}, 500)
+
+    def _handle_timemark_edit_time(self):
+        self._handle_timemark_manual_edit()
 
     def _handle_timemark_edit_coord(self):
         try:
@@ -2271,26 +2640,57 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
             body = self.rfile.read(length)
             data = json.loads(body) if body else {}
             base_dir = data.get("baseExportDir", "")
-            rel_path = data.get("assetRelPath", "")
-            photo_name = data.get("photoName", "0.jpg")
+            rel_path = data.get("assetRelPath", "") or data.get("rel", "")
+            photo_name = data.get("photoName", "")
             img_b64 = data.get("imageBase64", "")
 
             if not img_b64:
                 self._json({"ok": False, "error": "Data gambar kosong."}, 400)
                 return
 
-            target_photo = os.path.normpath(os.path.join(base_dir, rel_path, photo_name))
+            norm_rel = rel_path.replace("\\", "/").strip("/")
+            parts = norm_rel.split("/")
+            if norm_rel.lower().endswith(".jpg"):
+                asset_rel = "/".join(parts[:-1])
+                photo_name = parts[-1]
+            else:
+                asset_rel = norm_rel
+                if not photo_name:
+                    photo_name = "0.jpg"
+
+            if not base_dir:
+                base_dir = os.path.join(BASE_DIR, "03_photos_export")
+            base_norm = os.path.normpath(base_dir)
+            if os.path.basename(base_norm).lower() in ("03_photos_export", "04_photos_edited"):
+                export_root = os.path.dirname(base_norm)
+            else:
+                export_root = base_norm
+
+            photos_export = os.path.join(export_root, "03_photos_export")
+            if not os.path.isdir(photos_export):
+                photos_export = base_norm
+
+            target_photo = os.path.normpath(os.path.join(photos_export, asset_rel, photo_name))
             if not os.path.isfile(target_photo):
-                self._json({"ok": False, "error": "Berkas foto tujuan tidak ditemukan."}, 404)
-                return
+                os.makedirs(os.path.dirname(target_photo), exist_ok=True)
 
             backup_file = target_photo + ".original_backup.jpg"
-            if not os.path.isfile(backup_file):
+            if os.path.isfile(target_photo) and not os.path.isfile(backup_file):
                 shutil.copy2(target_photo, backup_file)
 
             raw_bytes = base64.b64decode(img_b64)
             with open(target_photo, "wb") as pf:
                 pf.write(raw_bytes)
+
+            photos_edited = os.path.join(export_root, "04_photos_edited")
+            out_target = os.path.join(photos_edited, "Tim_1", asset_rel, photo_name)
+            os.makedirs(os.path.dirname(out_target), exist_ok=True)
+
+            date_file = os.path.join(photos_export, asset_rel, "date.txt")
+            date_text = ""
+            if os.path.isfile(date_file):
+                with open(date_file, "r", encoding="utf-8") as df:
+                    date_text = df.read().strip()
 
             sub_env = os.environ.copy()
             sub_env["PYTHONUNBUFFERED"] = "1"
@@ -2298,8 +2698,12 @@ class ApiHandler(http.server.SimpleHTTPRequestHandler):
 
             cmd = make_script_cmd("edit_timemark_ide1.py", [
                 "--input", target_photo,
+                "--single-out", out_target,
                 "--detector", "guide"
             ])
+            if date_text:
+                cmd.extend(["--date", date_text])
+
             subprocess.run(
                 cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", env=sub_env, cwd=BASE_DIR,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
